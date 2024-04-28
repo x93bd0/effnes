@@ -5,13 +5,26 @@
 #include <limits.h>
 
 #ifndef uintmx_t
-  #define uintmx_t uint32_t
-  #define UINTVM_MAX (2<<29)-1
+	#define uintmx_t uint32_t
+	#define UINTVM_MAX (2<<29)-1
 #endif
 
-typedef struct VM6502 VM6502;
 typedef uint16_t (*LFRMethod)(void* VM, uint16_t ADDR, uint16_t SIZE, uint8_t* OUT);
 typedef uint16_t (*WTRMethod)(void* VM, uint16_t ADDR, uint16_t SIZE, uint8_t* INPUT);
+
+typedef struct VM6502 {
+	void* slot;
+
+	uint16_t pc;
+	uint8_t iX, iY,
+		Acc, Sp,
+		status, halted;
+	uint8_t ExInterrupt;
+	uintmx_t cc;
+
+	LFRMethod read;
+	WTRMethod write;
+} VM6502;
 
 VM6502* VM6502_init(LFRMethod, WTRMethod);
 void VM6502_store(VM6502*, void*);
@@ -30,9 +43,9 @@ uintmx_t VM6502_run_eff(VM6502*, uintmx_t);
 #define FLAG_NEGATIVE 0b10000000
 
 #define RAMIO_read(vm, pos, size, out) \
-  VM6502_ramio(vm)->read(vm, VM6502_ramio(vm), pos, size, (uint8_t*)(out));
+	VM6502_ramio(vm)->read(vm, VM6502_ramio(vm), pos, size, (uint8_t*)(out));
 
 #define RAMIO_write(vm, pos, size, in) \
-  VM6502_ramio(vm)->write(vm, VM6502_ramio(vm), pos, size, (uint8_t*)(in));
+	VM6502_ramio(vm)->write(vm, VM6502_ramio(vm), pos, size, (uint8_t*)(in));
 
 #endif
