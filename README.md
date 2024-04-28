@@ -14,3 +14,4 @@ This is a preliminary version of the effnes-emu project. Right now, we only have
 * Implement common cartridge's mapping
 * Test processor
 * And other things.
+* Better tests xd

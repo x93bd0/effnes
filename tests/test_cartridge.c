@@ -1,4 +1,4 @@
-#include "mappers/mapper.h"
+#include "../mappers/mapper.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>

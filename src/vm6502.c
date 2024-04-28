@@ -115,7 +115,7 @@ void __MOS6502_DEBUG(VM6502*);
 uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 {
   ins->cc = 0;
-  while (ins->cc < cycles)
+  while (ins->cc < cycles && !ins->ExInterrupt)
   {
     uint8_t raw_op;
     NEXT_BYTE(ins, &raw_op);

@@ -1,6 +1,6 @@
-#include "mappers/mapper.h"
-#include "inc/vm6502.h"
-#include "testasm.h"
+#include "../mappers/mapper.h"
+#include "../inc/vm6502.h"
+#include "../testasm.h"
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
@@ -73,14 +73,6 @@ int main()
   vm->write(vm, 0x8000, 16384, (uint8_t*)data);
   vm->write(vm, 0xC000, 16384, (uint8_t*)&data[16384]);
   fclose(ROM);
-
-  FILE* w = fopen("prg.b1.rom", "w");
-  fwrite(data, 16384, 1, w);
-  fclose(w);
-
-  FILE* w1 = fopen("prg.b2.rom", "w");
-  fwrite(&data[16384], 16384, 1, w1);
-  fclose(w1);
 
   VM6502_reset(vm);
 
