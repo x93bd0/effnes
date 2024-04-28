@@ -6,20 +6,20 @@
 
 #define	read_byte(ins, addr, out)	ins->read(ins, addr, 1, out)
 #define	read_addr(ins, addr, out)	ins->read(ins, addr, 2, (uint8_t*)(out))
-#define	next_byte(ins, out)			read_byte(ins, (ins)->pc++, out)
-#define	next_addr(ins, out)			ins->pc += read_addr(ins, (ins)->pc, out)
+#define	next_byte(ins, out)				read_byte(ins, (ins)->pc++, out)
+#define	next_addr(ins, out)				ins->pc += read_addr(ins, (ins)->pc, out)
 
-#define	set_flag(ins, flag)			ins->status ^= ((flag) & (ins)->status) ^ (flag)
-#define	unset_flag(ins, flag)		ins->status ^= (flag) & (ins)->status
+#define	set_flag(ins, flag)				ins->status ^= ((flag) & (ins)->status) ^ (flag)
+#define	unset_flag(ins, flag)			ins->status ^= (flag) & (ins)->status
 #define	upd_flag(ins, flag, val)	ins->status ^= ((flag) & (ins)->status) ^ ((val) ? (flag) : 0)
-#define	fetch_flag(ins, flag)		(((ins)->status & (flag)) > 0)
+#define	fetch_flag(ins, flag)			(((ins)->status & (flag)) > 0)
 
-#define	nz_flags(ins, no)			upd_flag(ins, FLAG_NEGATIVE, (no) & 0x80); \
-									upd_flag(ins, FLAG_ZERO, !no);
-#define	st_push8(ins, no)			ins->write(ins, ins->Sp | 0x100, 1, &no); \
-									ins->Sp = !ins->Sp ? 0xff : ins->Sp - 1;
-#define	st_pop8(ins, out)			ins->Sp = (ins->Sp + 1) & 0xff; \
-									read_byte(ins, ins->Sp | 0x100, out);
+#define	nz_flags(ins, no)					upd_flag(ins, FLAG_NEGATIVE, (no) & 0x80); \
+																	upd_flag(ins, FLAG_ZERO, !no);
+#define	st_push8(ins, no)					ins->write(ins, ins->Sp | 0x100, 1, &no); \
+																	ins->Sp = !ins->Sp ? 0xff : ins->Sp - 1;
+#define	st_pop8(ins, out)					ins->Sp = (ins->Sp + 1) & 0xff; \
+																	read_byte(ins, ins->Sp | 0x100, out);
 
 VM6502* VM6502_init(LFRMethod read, WTRMethod write)
 {
