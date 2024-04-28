@@ -15,3 +15,11 @@ This is a preliminary version of the effnes-emu project. Right now, we only have
 * Test processor
 * And other things.
 * Better tests xd
+
+# How to test
+```bash
+# For compiling the test suite for the processor (u can add _opt for a faster test)
+make test_processor
+# Running
+./test6502
+```
