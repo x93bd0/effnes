@@ -1,5 +1,5 @@
 # Efficient (We hope so) NES Emulator
-This is a preliminary version of the effnes-emu project. Right now, we only have the Processor implemented (not completely), and we're optimizing it for the ESP32 processor.
+This is a preliminary version of the effnes-emu project. Right now, we only have the Processor implemented (not completely), and we're optimizing it for the ESP32 board (Xtensa LX-7 processor, 240MHz).
 
 # Features
 * (Jump Table + Switch) emulation
