@@ -37,20 +37,22 @@ void __MOS6502_DEBUG(VM6502* VM)
   fprintf(stderr, "--  Y register: %d (%#4x)\n", (int8_t)VM->iY, VM->iY);
   fprintf(stderr, "--  A register: %d (%#4x)\n", (int8_t)VM->Acc, VM->Acc);
   fprintf(stderr, "--   Stack Ptr: %d (%#4x)\n", VM->Sp, VM->Sp);
-  uint8_t b1; VM->read(VM, VM6502_ramio(VM), VM->pc, 1, &b1);
-  uint16_t a; VM->read(VM, VM6502_ramio(VM), VM->pc + 1, 2, (uint8_t*)&a);
+  uint8_t b1; VM->read(VM, VM->pc, 1, &b1);
+  uint16_t a; VM->read(VM, VM->pc + 1, 2, (uint8_t*)&a);
   fprintf(stderr, "-- Program Ptr: %#6x (%#4x: %s, (next: %#6x))\n", VM->pc, b1, FROMASM[b1], a);
 }
 
-uint16_t NESRAM_WRITE(void* VM, VM6502RAM_IO*, uint16_t ADDR, uint16_t SIZE, uint8_t* INPUT) {
+uint16_t NESRAM_WRITE(void* VM, uint16_t ADDR, uint16_t SIZE, uint8_t* INPUT) {
+  uint8_t* slot = VM6502_slot((VM6502*)VM);
   for (uint x = ADDR; x < (ADDR + SIZE); x++)
-    ((uint8_t*)VM6502_slot((VM6502*)VM))[x] = INPUT[x - ADDR];
+    slot[x] = INPUT[x - ADDR];
   return SIZE;
 }
 
-uint16_t NESRAM_READ(void* VM, VM6502RAM_IO*, uint16_t ADDR, uint16_t SIZE, uint8_t* OUT) {
+uint16_t NESRAM_READ(void* VM, uint16_t ADDR, uint16_t SIZE, uint8_t* OUT) {
+  uint8_t* slot = VM6502_slot((VM6502*)VM);
   for (uint x = ADDR; x < (ADDR + SIZE); x++)
-    OUT[x - ADDR] = ((uint8_t*)VM6502_slot((VM6502*)VM))[x];
+    OUT[x - ADDR] = slot[x];
   return SIZE;
 }
 
@@ -68,8 +70,8 @@ int main()
   int8_t data[16384*2+1];
   fread(data, 16384*2, 1, ROM);
 
-  RAMIO_write(vm, 0x8000, 16384, data);
-  RAMIO_write(vm, 0xC000, 16384, &data[16384]);
+  vm->write(vm, 0x8000, 16384, (uint8_t*)data);
+  vm->write(vm, 0xC000, 16384, (uint8_t*)&data[16384]);
   fclose(ROM);
 
   FILE* w = fopen("prg.b1.rom", "w");
@@ -80,20 +82,25 @@ int main()
   fwrite(&data[16384], 16384, 1, w1);
   fclose(w1);
 
-  char S[1];
   VM6502_reset(vm);
-  uintmx_t cycles = 0;
 
   uint16_t addr;
-  RAMIO_read(vm, 0xfffc, 2, &addr);
+  vm->read(vm, 0xfffc, 2, (uint8_t*)&addr);
   vm->pc = addr;
 
-  
+  uintmx_t cycsto = 17897731;
+
+  printf("Starting vm...\r\n");
   clock_t start = clock();
-  VM6502_run(vm, 17897731);
-  clock_t end = clock();
-  float seconds = (float)(end - start) / CLOCKS_PER_SEC;
+  VM6502_run_eff(vm, cycsto);
+  float seconds = (float)(clock() - start) / CLOCKS_PER_SEC;
   __MOS6502_DEBUG(vm);
 
-  printf("took %f seconds\n", seconds);
+  float hz = cycsto / seconds;
+  printf("ran at %f hertz\n", hz);
+  printf("ran at %f mega-hertz\n", hz * 1e-6);
+
+  free(VM6502_slot(vm));
+  MI_destroy(inf);
+  free(vm);
 }

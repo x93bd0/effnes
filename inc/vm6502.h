@@ -10,29 +10,24 @@
 #endif
 
 typedef struct VM6502 VM6502;
-typedef struct VM6502RAM_IO VM6502RAM_IO;
-typedef uint16_t (*LFRMethod)(void* VM, VM6502RAM_IO* IO, uint16_t ADDR, uint16_t SIZE, uint8_t* OUT);
-typedef uint16_t (*WTRMethod)(void* VM, VM6502RAM_IO* IO, uint16_t ADDR, uint16_t SIZE, uint8_t* INPUT);
-
-struct VM6502RAM_IO {
-  LFRMethod read;
-  WTRMethod write;
-};
+typedef uint16_t (*LFRMethod)(void* VM, uint16_t ADDR, uint16_t SIZE, uint8_t* OUT);
+typedef uint16_t (*WTRMethod)(void* VM, uint16_t ADDR, uint16_t SIZE, uint8_t* INPUT);
 
 VM6502* VM6502_init(LFRMethod, WTRMethod);
 void VM6502_store(VM6502*, void*);
 void* VM6502_slot(VM6502*);
 void VM6502_reset(VM6502*);
-VM6502RAM_IO* VM6502_ramio(VM6502*);
-uintmx_t VM6502_run(VM6502*, uintmx_t);
 
-#define FLAG_CARRY    0x0
-#define FLAG_ZERO     0x1
-#define FLAG_INTDIS   0x2
-#define FLAG_DECIMAL  0x3
-#define FLAG_BREAK    0x4
-#define FLAG_OVERFLOW 0x6
-#define FLAG_NEGATIVE 0x7
+uintmx_t VM6502_run(VM6502*, uintmx_t);
+uintmx_t VM6502_run_eff(VM6502*, uintmx_t);
+
+#define FLAG_CARRY    0b1
+#define FLAG_ZERO     0b10
+#define FLAG_INTDIS   0b100
+#define FLAG_DECIMAL  0b1000
+#define FLAG_BREAK    0b10000
+#define FLAG_OVERFLOW 0b1000000
+#define FLAG_NEGATIVE 0b10000000
 
 #define RAMIO_read(vm, pos, size, out) \
   VM6502_ramio(vm)->read(vm, VM6502_ramio(vm), pos, size, (uint8_t*)(out));
