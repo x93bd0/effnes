@@ -1,8 +1,6 @@
 #include "../inc/vm6502.h"
-#include "../testasm.h"
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 // TODO: st_push816, st_pop816
 // TODO: Possible bug in CP* (No substraction was done)
@@ -10,10 +8,17 @@
 #define u16 uint16_t
 #define u8  uint8_t
 
-/* void read_addr(VM6502* vm, u16 addr, u16* out)
+/*
+void read_addr(VM6502* vm, u16 addr, u16* out)
 {
 	vm->read(vm, addr, 2, (u8*)out);
-} */
+}
+
+void read_byte(VM6502* vm, u16 addr, u8* out)
+{
+	vm->read(vm, addr, 1, out);
+}
+*/
 
 #define	read_byte(ins, addr, out)	ins->read(ins, addr, 1, out)
 #define	read_addr(ins, addr, out)	ins->read(ins, addr, 2, (uint8_t*)(out))
@@ -265,7 +270,6 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				set_flag(ins, FLAG_INTDIS);
 				read_addr(ins, 0xfffe, &faddr);
 				ins->pc = faddr;
-				printf("Break\n");
 				break;
 			case OP_BVC:
 				if (!fetch_flag(ins, FLAG_OVERFLOW))
@@ -295,7 +299,6 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 			case OP_CPX:
 				read_byte(ins, faddr, &b1);
 				upd_flag(ins, FLAG_CARRY, ins->iX >= b1);
-				printf("%d\n", ins->iX - b1);
 				nz_flags(ins, ins->iX - b1);	// TODO: Possible bug
 				break;
 			case OP_CPY:
@@ -382,7 +385,6 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				break;
 			case OP_ORA:
 				read_byte(ins, faddr, &b1);
-				printf("ORA %d | %d = %d\n", ins->Acc, b1, ins->Acc | b1);
 				ins->Acc |= b1;
 				nz_flags(ins, ins->Acc);
 				break;
