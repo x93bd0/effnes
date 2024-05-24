@@ -10,13 +10,13 @@
 #define u16 uint16_t
 #define u8  uint8_t
 
-void read_addr(VM6502* vm, u16 addr, u16* out)
+/* void read_addr(VM6502* vm, u16 addr, u16* out)
 {
 	vm->read(vm, addr, 2, (u8*)out);
-}
+} */
 
 #define	read_byte(ins, addr, out)	ins->read(ins, addr, 1, out)
-// #define	read_addr(ins, addr, out)	ins->read(ins, addr, 2, (uint8_t*)(out))
+#define	read_addr(ins, addr, out)	ins->read(ins, addr, 2, (uint8_t*)(out))
 #define	next_byte(ins, out)				read_byte(ins, (ins)->pc++, out)
 #define	next_addr(ins, out)				{read_addr(ins, (ins)->pc, out); ins->pc += 2;}
 
@@ -101,7 +101,6 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 	ins->cc = 0;
 	while (ins->cc < cycles && !ins->ExInterrupt)
 	{
-		uint16_t pc = ins->pc;
 		uint8_t raw_op;
 		next_byte(ins, &raw_op);
 
@@ -498,18 +497,6 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				// TODO: Throw error
 				break;
 		}
-
-		u8 out[3];
-		ins->read(ins, pc, 3, out);
-		fprintf(stderr, "%4x | %2x %2x %2x | %s | %2x %2x %2x %2x |", pc, out[0], out[1], out[2], FROMASM[out[0]], ins->Acc, ins->iX, ins->iY, ins->Sp);
-		uint8_t status = ins->status;
-		for (uint x = 0; x < 8; x++, status <<= 1)
-		{
-			if (x == 2 || x == 3) continue;
-			fprintf(stderr, "%d", (status & 0x80) > 0);
-		}
-		fprintf(stderr, "|\n");
-
 
 		ins->cc += tim + (ett == 2);
 		if (ins->halted) break;
