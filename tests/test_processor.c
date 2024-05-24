@@ -29,8 +29,19 @@ void __MOS6502_DEBUG(VM6502* VM)
 
 uint16_t NESRAM_WRITE(void* VM, uint16_t START, uint16_t SIZE, uint8_t* INPUT) {
 	uint8_t* slot = VM6502_slot((VM6502*)VM);
+	printf("[RAM] Write %#6x <-> %#6x\n", START, START + SIZE - 1);
+
+	uint i = 0; printf("%#6x = ", START);
 	for (uint ADDR = START; ADDR < START + SIZE; ADDR++)
+	{
 		slot[ADDR] = INPUT[ADDR - START];
+		printf("%2x ", INPUT[ADDR - START]);
+		if (i == 7)
+		{
+			i = 0;
+			printf("\n%#6x = ", ADDR + 1);
+		} else i++;
+	} printf("\n");
 	return SIZE;
 }
 
@@ -49,6 +60,7 @@ int main()
 
 	char header[17];
 	FILE* ROM = fopen("rom.nes", "r");
+
 	fread(header, 16, 1, ROM);
 	MapperInf inf = MI_fetch(header);
 
@@ -82,3 +94,4 @@ int main()
 	MI_destroy(inf);
 	free(vm);
 }
+

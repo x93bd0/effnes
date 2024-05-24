@@ -1,13 +1,24 @@
 #include "../inc/vm6502.h"
+#include "../testasm.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 // TODO: st_push816, st_pop816
+// TODO: Possible bug in CP* (No substraction was done)
+
+#define u16 uint16_t
+#define u8  uint8_t
+
+void read_addr(VM6502* vm, u16 addr, u16* out)
+{
+	vm->read(vm, addr, 2, (u8*)out);
+}
 
 #define	read_byte(ins, addr, out)	ins->read(ins, addr, 1, out)
-#define	read_addr(ins, addr, out)	ins->read(ins, addr, 2, (uint8_t*)(out))
+// #define	read_addr(ins, addr, out)	ins->read(ins, addr, 2, (uint8_t*)(out))
 #define	next_byte(ins, out)				read_byte(ins, (ins)->pc++, out)
-#define	next_addr(ins, out)				ins->pc += read_addr(ins, (ins)->pc, out)
+#define	next_addr(ins, out)				{read_addr(ins, (ins)->pc, out); ins->pc += 2;}
 
 #define	set_flag(ins, flag)				ins->status ^= ((flag) & (ins)->status) ^ (flag)
 #define	unset_flag(ins, flag)			ins->status ^= (flag) & (ins)->status
@@ -15,7 +26,7 @@
 #define	fetch_flag(ins, flag)			(((ins)->status & (flag)) > 0)
 
 #define	nz_flags(ins, no)					upd_flag(ins, FLAG_NEGATIVE, (no) & 0x80); \
-																	upd_flag(ins, FLAG_ZERO, !no);
+																	upd_flag(ins, FLAG_ZERO, no == 0);
 #define	st_push8(ins, no)					ins->write(ins, ins->Sp | 0x100, 1, &no); \
 																	ins->Sp = !ins->Sp ? 0xff : ins->Sp - 1;
 #define	st_pop8(ins, out)					ins->Sp = (ins->Sp + 1) & 0xff; \
@@ -34,7 +45,7 @@ void VM6502_store(VM6502* ins, void* slotdata)
 	ins->slot = slotdata;
 }
 
-void* VM6502_slot(VM6502* ins)
+inline void* VM6502_slot(VM6502* ins)
 {
 	return ins->slot;
 }
@@ -56,10 +67,10 @@ void VM6502_reset(VM6502* ins)
 
 	uint8_t in = 0;
 	if (ins->cc == 0) {
-		ins->status = 0x34;
+		ins->status = 0x36;
 		ins->Acc = ins->iX =
 			ins->iY = ins->cc = 0;
-		ins->Sp = 0xFD;
+		ins->Sp = 0xff;
 
 		ins->write(ins, 0x4015, 1, &in);
 		ins->write(ins, 0x4017, 1, &in);
@@ -90,6 +101,7 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 	ins->cc = 0;
 	while (ins->cc < cycles && !ins->ExInterrupt)
 	{
+		uint16_t pc = ins->pc;
 		uint8_t raw_op;
 		next_byte(ins, &raw_op);
 
@@ -123,10 +135,10 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				next_addr(ins, &faddr);
 				if (faddr && 0xff == 0xff)
 				{
-					uint8_t b2;
-					read_byte(ins, faddr & 0xff, &b1);
-					read_byte(ins, faddr, &b2);
-					faddr = (b1 << 8) | b2;
+					uint8_t b2, msb = faddr >> 8;
+					read_byte(ins, faddr, &b1);
+					read_byte(ins, (msb << 8) + ((faddr + 1) & 0xff), &b2);
+					faddr = (b2 << 8) | b1;
 				} else
 					read_addr(ins, faddr, &faddr);
 				break;
@@ -254,6 +266,7 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				set_flag(ins, FLAG_INTDIS);
 				read_addr(ins, 0xfffe, &faddr);
 				ins->pc = faddr;
+				printf("Break\n");
 				break;
 			case OP_BVC:
 				if (!fetch_flag(ins, FLAG_OVERFLOW))
@@ -278,17 +291,18 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 			case OP_CMP:
 				read_byte(ins, faddr, &b1);
 				upd_flag(ins, FLAG_CARRY, ins->Acc >= b1);
-				nz_flags(ins, ins->Acc);	// TODO: Possible bug
+				nz_flags(ins, ins->Acc - b1);	// TODO: Possible bug
 				break;
 			case OP_CPX:
 				read_byte(ins, faddr, &b1);
 				upd_flag(ins, FLAG_CARRY, ins->iX >= b1);
-				nz_flags(ins, ins->iX);	// TODO: Possible bug
+				printf("%d\n", ins->iX - b1);
+				nz_flags(ins, ins->iX - b1);	// TODO: Possible bug
 				break;
 			case OP_CPY:
 				read_byte(ins, faddr, &b1);
 				upd_flag(ins, FLAG_CARRY, ins->iY >= b1);
-				nz_flags(ins, ins->iY);	// TODO: Possible bug
+				nz_flags(ins, ins->iY - b1);	// TODO: Possible bug
 				break;
 			case OP_DEC:
 				read_byte(ins, faddr, &b1);
@@ -313,14 +327,17 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 			case OP_INC:
 				read_byte(ins, faddr, &b1);
 				++b1;
+				nz_flags(ins, b1);
 				ins->write(ins, faddr, 1, &b1);
 				// TODO: OVERFLOW???
 				break;
 			case OP_INX:
 				ins->iX = ins->iX + 1;
+				nz_flags(ins, ins->iX);
 				break;
 			case OP_INY:
 				ins->iY = ins->iY + 1;
+				nz_flags(ins, ins->iY);
 				break;
 			case OP_JMP:	// Partially implemented, see http://www.6502.org/tutorials/6502opcodes.html#JMP for more info
 				ins->pc = faddr;
@@ -366,17 +383,19 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				break;
 			case OP_ORA:
 				read_byte(ins, faddr, &b1);
+				printf("ORA %d | %d = %d\n", ins->Acc, b1, ins->Acc | b1);
 				ins->Acc |= b1;
 				nz_flags(ins, ins->Acc);
 				break;
 			case OP_PHA:
-				ins->write(ins, 0x100 + ins->Sp++, 1, &ins->Acc);
+				ins->write(ins, 0x100 + ins->Sp--, 1, &ins->Acc);
 				break;
 			case OP_PHP:
 				ins->write(ins, 0x100 + ins->Sp++, 1, &ins->status);
 				break;
 			case OP_PLA:
-				read_byte(ins, 0x100 + --ins->Sp, &ins->Acc);
+				read_byte(ins, 0x100 + ++ins->Sp, &ins->Acc);
+				nz_flags(ins, ins->Acc);
 				break;
 			case OP_PLP:
 				read_byte(ins, 0x100 + --ins->Sp, &ins->status);
@@ -479,6 +498,18 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				// TODO: Throw error
 				break;
 		}
+
+		u8 out[3];
+		ins->read(ins, pc, 3, out);
+		fprintf(stderr, "%4x | %2x %2x %2x | %s | %2x %2x %2x %2x |", pc, out[0], out[1], out[2], FROMASM[out[0]], ins->Acc, ins->iX, ins->iY, ins->Sp);
+		uint8_t status = ins->status;
+		for (uint x = 0; x < 8; x++, status <<= 1)
+		{
+			if (x == 2 || x == 3) continue;
+			fprintf(stderr, "%d", (status & 0x80) > 0);
+		}
+		fprintf(stderr, "|\n");
+
 
 		ins->cc += tim + (ett == 2);
 		if (ins->halted) break;
