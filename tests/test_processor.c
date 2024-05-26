@@ -1,86 +1,88 @@
 #include "../mappers/mapper.h"
 #include "../inc/vm6502.h"
-#include "../testasm.h"
+
 #include <stdlib.h>
-#include <unistd.h>
-#include <string.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <time.h>
 
-void __MOS6502_DEBUG(VM6502* VM)
+#define u8 uint8_t
+#define u16 uint16_t
+#define u32 uint32_t
+
+u16 io_read(VM6502* vm, u16 addr, u16 size, u8* out)
 {
-	fprintf(stderr, "-- CPU Debug - MOS6502 --\n");
-	fprintf(stderr, "-- Flags: ");
-
-	uint8_t status = VM->status;
-	for (uint x = 0; x < 8; x++, status <<= 1)
-		fprintf(stderr, "%d", (status & 0x80) > 0);
-
-	fprintf(stderr, "\n          NV-BDIZC\n");
-	fprintf(stderr, "--      Cycles: %d (%#4x)\n", VM->cc, VM->cc);
-	fprintf(stderr, "--  X register: %d (%#4x)\n", (int8_t)VM->iX, VM->iX);
-	fprintf(stderr, "--  Y register: %d (%#4x)\n", (int8_t)VM->iY, VM->iY);
-	fprintf(stderr, "--  A register: %d (%#4x)\n", (int8_t)VM->Acc, VM->Acc);
-	fprintf(stderr, "--   Stack Ptr: %d (%#4x)\n", VM->Sp, VM->Sp);
-	uint8_t b1; VM->read(VM, VM->pc, 1, &b1);
-	uint16_t a; VM->read(VM, VM->pc + 1, 2, (uint8_t*)&a);
-	fprintf(stderr, "-- Program Ptr: %#6x (%#4x: %s, (next: %#6x))\n", VM->pc, b1, FROMASM[b1], a);
+	for (u16 x = 0; x < size; x++)
+		out[x] = ((u8*)vm->slot)[addr + x];
+	return size;
 }
 
-uint16_t NESRAM_WRITE(void* VM, uint16_t START, uint16_t SIZE, uint8_t* INPUT) {
-	uint8_t* slot = VM6502_slot((VM6502*)VM);
-	for (uint ADDR = START; ADDR < START + SIZE; ADDR++)
-		slot[ADDR] = INPUT[ADDR - START];
-	return SIZE;
-}
-
-uint16_t NESRAM_READ(void* VM, uint16_t START, uint16_t SIZE, uint8_t* OUT) {
-	uint8_t* slot = VM6502_slot((VM6502*)VM);
-	for (uint16_t ADDR = START; ADDR < START + SIZE; ADDR++)
-		OUT[ADDR - START] = slot[ADDR];
-	return SIZE;
+u16 io_write(VM6502* vm, u16 addr, u16 size, u8* input)
+{
+	for (u16 x = 0; x < size; x++)
+		((u8*)vm->slot)[addr + x] = input[x];
+	return size;
 }
 
 int main()
 {
-	VM6502* vm = VM6502_init(NESRAM_READ, NESRAM_WRITE);
-	VM6502_store(vm, malloc(sizeof(uint8_t)*64*1024));
-	printf("sizeof(VM6502) = %lu\n", sizeof(VM6502));
+	VM6502* machine = VM6502_init(
+		(LFRMethod)io_read, (WTRMethod)io_write);
+	VM6502_store(machine, malloc(sizeof(u8) * (64*1024)));
+
+	// De-randomize vRAM
+	for (uint x = 0; x < 64*1024; x++)
+		((u8*)machine->slot)[x] = 0;
+
+	FILE* fd = fopen("rom.nes", "r");
+	if (!fd)
+	{
+		printf("[ERROR] Can't open 'rom.nes'\n");
+		goto free0;
+	}
 
 	char header[17];
-	FILE* ROM = fopen("rom.nes", "r");
+	fread(header, 16, 1, fd);
+	MapperInf ROM = MI_fetch(header);
+	u8 rs = MI_prgrom(ROM);
 
-	fread(header, 16, 1, ROM);
-	MapperInf inf = MI_fetch(header);
+	if (!rs)
+	{
+		printf("[ERROR] 'rom.nes' has no Program ROM!\n");
+		goto free1;
+	}
 
-	fseek(ROM, MI_fprgoff(inf), SEEK_SET);
-	int8_t data[16384*2+1];
-	fread(data, 16384*2, 1, ROM);
+	u8* code = (u8*)malloc(sizeof(u8) * (16384 * rs + 1));
+	fseek(fd, MI_fprgoff(ROM), SEEK_SET);
+	fread(code, 16384 * rs, 1, fd);
+	fclose(fd);
 
-	vm->write(vm, 0x8000, 16384, (uint8_t*)data);
-	vm->write(vm, 0xC000, 16384, (uint8_t*)&data[16384]);
-	fclose(ROM);
+	machine->write(machine, 0x8000, 16384 * rs, code);
+	VM6502_reset(machine);
+	printf("[DEBUG] Setup Complete!\n");
 
-	VM6502_reset(vm);
+	u16 addr;
+	machine->read(
+		machine, RST_VECTOR, 2, (u8*)&addr);
+	machine->pc = addr;
 
-	uint16_t addr;
-	vm->read(vm, 0xfffc, 2, (uint8_t*)&addr);
-	vm->pc = addr;
+	VM6502_NMI(machine);
 
-	uintmx_t cycsto = 17897731;
-
-	printf("Starting vm...\r\n");
+	uintmx_t cyc = 17897731;
 	clock_t start = clock();
-	VM6502_run_eff(vm, cycsto);
-	float seconds = (float)(clock() - start) / CLOCKS_PER_SEC;
-	__MOS6502_DEBUG(vm);
+	VM6502_run_eff(machine, cyc);
+	clock_t end = clock();
+	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
 
-	float hz = cycsto / seconds;
+	float hz = cyc / seconds;
 	printf("ran at %f hertz\n", hz);
 	printf("ran at %f mega-hertz\n", hz * 1e-6);
 
-	free(VM6502_slot(vm));
-	MI_destroy(inf);
-	free(vm);
+	free(code);
+free1:
+	free(ROM);
+free0:
+	free(machine->slot);
+	free(machine);
+	printf("[DEBUG] Code Execution Finalized Correctly!\n");
 }
-

@@ -53,3 +53,5 @@ for i in range(0, min(len(o), len(o1))):
     print("Collision found ", l, o[i], o1[i])
     break
   l += 1
+
+print("compared", len(o), "with", len(o1))

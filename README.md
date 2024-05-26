@@ -4,7 +4,7 @@ This is a preliminary version of the effnes-emu project. Right now, we only have
 # Features
 * (Jump Table + Switch) emulation
 * Correct cycle emulation in mind
-* Processor can run up to 70MHz right now
+* Processor can run up to 110MHz on 2.7GHz right now
 * Memory efficient, taking advantage of mirroring
 * Easily debuggable (at least we're trying...)
 
@@ -12,9 +12,9 @@ This is a preliminary version of the effnes-emu project. Right now, we only have
 * PPU
 * APU
 * Implement common cartridge's mapping
-* Test processor
+* Test processor (50%)
 * And other things.
-* Better tests xd
+* Refactorize tests
 
 # How to test
 ```bash

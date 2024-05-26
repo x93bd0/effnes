@@ -98,6 +98,22 @@ void VM6502_reset(VM6502* ins)
 void __MOS6502_DEBUG(VM6502*);
 #endif
 
+void VM6502_NMI(VM6502* ins)
+{
+	uint16_t faddr;
+	uint8_t b1;
+
+	b1 = (ins->pc >> 8) & 0xff;
+	st_push8(ins, b1);
+	b1 = ins->pc & 0xff;
+	st_push8(ins, b1);
+	b1 = ins->status & (~FLAG_BREAK);
+	st_push8(ins, b1);
+	set_flag(ins, FLAG_INTDIS);
+	read_addr(ins, NMI_VECTOR, &faddr);
+	ins->pc = faddr;
+}
+
 // TODO: Better io_write
 // TODO: Optimize upd_flag
 // TODO: Check if page boundary crossed

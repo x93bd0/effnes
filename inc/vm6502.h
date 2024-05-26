@@ -31,6 +31,7 @@ void VM6502_store(VM6502*, void*);
 void* VM6502_slot(VM6502*);
 void VM6502_reset(VM6502*);
 
+void VM6502_NMI(VM6502*);
 uintmx_t VM6502_run(VM6502*, uintmx_t);
 uintmx_t VM6502_run_eff(VM6502*, uintmx_t);
 
@@ -41,6 +42,10 @@ uintmx_t VM6502_run_eff(VM6502*, uintmx_t);
 #define FLAG_BREAK    0b10000
 #define FLAG_OVERFLOW 0b1000000
 #define FLAG_NEGATIVE 0b10000000
+
+#define NMI_VECTOR  0xfffa
+#define RST_VECTOR  0xfffc
+#define BRK_VECTOR  0xfffe
 
 #define RAMIO_read(vm, pos, size, out) \
 	VM6502_ramio(vm)->read(vm, VM6502_ramio(vm), pos, size, (uint8_t*)(out));
