@@ -8,7 +8,7 @@ MapperInf MI_fetch(char* ROM)
 	strcpy(inf, "INV");
 	if (ROM[0] != 0x4E || ROM[1] != 0x45 || ROM[2] != 0x53 || ROM[3] != 0x1A)
 		return inf;
-	for (uint x = 0; x < 16; x++)
+	for (uint8_t x = 0; x < 16; x++)
 		inf[x] = ROM[x];
 	return inf;
 }

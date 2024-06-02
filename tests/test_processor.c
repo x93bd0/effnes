@@ -31,13 +31,13 @@ int main()
 	VM6502_store(machine, malloc(sizeof(u8) * (64*1024)));
 
 	// De-randomize vRAM
-	for (uint x = 0; x < 64*1024; x++)
+	for (u16 x = 0; x < 64*1024-1; x++) // Used to overflow back to 0
 		((u8*)machine->slot)[x] = 0;
 
 	FILE* fd = fopen("rom.nes", "r");
 	if (!fd)
 	{
-		printf("[ERROR] Can't open 'rom.nes'\n");
+		perror("[ERROR] Can't open 'rom.nes'\n");
 		goto free0;
 	}
 
@@ -48,7 +48,7 @@ int main()
 
 	if (!rs)
 	{
-		printf("[ERROR] 'rom.nes' has no Program ROM!\n");
+		perror("[ERROR] 'rom.nes' has no Program ROM!\n");
 		goto free1;
 	}
 
@@ -75,8 +75,8 @@ int main()
 	float seconds = (float)(end - start) / CLOCKS_PER_SEC;
 
 	float hz = cyc / seconds;
-	printf("ran at %f hertz\n", hz);
-	printf("ran at %f mega-hertz\n", hz * 1e-6);
+	printf("Ran at %f Hz\n", hz);
+	printf("Ran at %f MHz\n", hz * 1e-6);
 
 	free(code);
 free1:
