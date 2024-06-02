@@ -1,0 +1,10 @@
+.idea/
+
+.vs/
+/.vs
+
+.vscode/
+.vs-code/
+
+build/
+out/
