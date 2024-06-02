@@ -18,7 +18,7 @@ void __MOS6502_TRACE(VM6502* VM)
 	VM->read(VM, VM->pc, 3, out);
 	//fprintf(stderr, "%4x | %2x %2x %2x | %s | %2x %2x %2x %2x |", VM->pc, out[0], out[1], out[2], FROMASM[out[0]], VM->Acc, VM->iX, VM->iY, VM->Sp);
 	uint8_t status = VM->status;
-	for (uint x = 0; x < 8; x++, status <<= 1)
+	for (u8 x = 0; x < 8; x++, status <<= 1)
 	{
 		if (x == 2 || x == 3) continue;
 		fprintf(stderr, "%d", (status & 0x80) > 0);
@@ -33,7 +33,7 @@ void __MOS6502_DEBUG(VM6502* VM)
 	fprintf(stderr, "- ID |   X |   Y |   A | Ptr | NV-BDIZC |\n");
 	fprintf(stderr, "- NO | %3d | %3d | %3d | %3d | ", VM->iX, VM->iY, VM->Acc, VM->Sp);
 	uint8_t status = VM->status;
-	for (uint x = 0; x < 8; x++, status <<= 1)
+	for (u8 x = 0; x < 8; x++, status <<= 1)
 		fprintf(stderr, "%d", (status & 0x80) > 0);
 	fprintf(stderr, " |\n");
 	fprintf(stderr, "- HX |  %2x |  %2x |  %2x |  %2x |", VM->iX, VM->iY, VM->Acc, VM->Sp);
@@ -63,7 +63,7 @@ u16 io_write(VM6502* vm, u16 addr, u16 size, u8* input)
 	debug(printf("[DEBUG] Write %#6x <-> %#6x\n", addr, addr + size - 1));
 	if (!WRITE_EVENT)
 		WRITE_EVENT = 1;
-	uint i = 0;
+	u16 i = 0;
 	debug(printf("        "));
 	for (u16 x = 0; x < size; x++)
 	{
@@ -96,13 +96,13 @@ int main()
 		(LFRMethod)io_read, (WTRMethod)io_write);
 	VM6502_store(machine, malloc(sizeof(u8)*64*1024));
 
-	for (uint x = 0; x < 64*1024; x++)
+	for (u16 x = 0; x < 64*1024-1; x++)
 		((u8*)machine->slot)[x] = 0;
 
 	FILE* fd = fopen("rom.nes", "r");
 	if (!fd)
 	{
-		printf("[ERROR] Can't open 'rom.nes'\n");
+		perror("[ERROR] Can't open 'rom.nes'\n");
 		goto free0;
 	}
 
@@ -113,7 +113,7 @@ int main()
 
 	if (!rs)
 	{
-		printf("[ERROR] 'rom.nes' has no Program ROM!\n");
+		perror("[ERROR] 'rom.nes' has no Program ROM!\n");
 		goto free1;
 	}
 
