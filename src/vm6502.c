@@ -2,7 +2,6 @@
 #include "../inc/ops6502.h"
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>  // TODO: Remove
 
 #define READ_BYTE(ins, addr, out)	ins->read(ins, addr, 1, out)
 #define READ_ADDR(ins, addr, out)	ins->read(ins, addr, 2, (uint8_t*)(out))
@@ -24,8 +23,8 @@
 	FLAG_UPD(ins, FLAG_ZERO, !(data)); \
 }
 
-#define STACK_PSH8(ins, data)		{WRITE_BYTE(ins, ins->S-- | 0x100, data);printf("PUSH %#2x ", data);}
-#define STACK_POP8(ins, out)		{READ_BYTE(ins, ++ins->S | 0x100, out);printf("READ %#2x ", *out);}
+#define STACK_PSH8(ins, data)		WRITE_BYTE(ins, ins->S-- | 0x100, data);
+#define STACK_POP8(ins, out)		READ_BYTE(ins, ++ins->S | 0x100, out);
 #define STACK_PSH16(ins, data)		{ \
 	uint8_t temp = data >> 8; \
 	STACK_PSH8(ins, temp); \
@@ -205,6 +204,7 @@ uintmx_t VM6502_run(VM6502* vm, uintmx_t cycles)
 		// TODO: make internal_opcode ordered
 		// 		(this helps the compiler find the opcodes easily)
 		// TODO: Collapse similar opcodeds (T**) into one instruction
+		// TODO: Consider if the overhead introduced by composite opcodes is acceptable
 		t_byte2 = 0;  // Used as a flag in some cases
 
 		switch (internal_opcode)
@@ -215,7 +215,6 @@ uintmx_t VM6502_run(VM6502* vm, uintmx_t cycles)
 				FLAGS_NZ(vm, vm->A);
 				break;
 			case OP_LDX:
-				printf("addr:%#4x ", t_addr);
 				READ_BYTE(vm, t_addr, &vm->X);
 				FLAGS_NZ(vm, vm->X);
 				break;
@@ -337,19 +336,58 @@ uintmx_t VM6502_run(VM6502* vm, uintmx_t cycles)
 				FLAGS_NZ(vm, vm->A);
 				break;
 
-			// Logical
-			case OP_AND:
+			case OP_RRA:
 				READ_BYTE(vm, t_addr, &t_byte1);
+				t_byte2 = FLAG_GET(vm, FLAG_CARRY);
+				FLAG_UPD(vm, FLAG_CARRY, t_byte1 & 0x1)
+				t_byte1 >>= 1, t_byte1 += t_byte2 ? 0x80 : 0;
+				WRITE_BYTE(vm, t_addr, t_byte1);
+
+				// ADC Code
+				t_addr = vm->A + t_byte1 + FLAG_GET(vm, FLAG_CARRY);
+				FLAG_UPD(vm, FLAG_CARRY, t_addr > 0xff);
+				FLAG_UPD(vm, FLAG_OVERFLOW, (~(vm->A ^ t_byte1) & (vm->A ^ t_addr)) & 0x80);
+				vm->A = t_addr & 0xff;
+				FLAGS_NZ(vm, vm->A);
+				break;
+
+			// Logical
+			case OP_RLA:  // Composite
+				READ_BYTE(vm, t_addr, &t_byte1);
+				t_byte2 = FLAG_GET(vm, FLAG_CARRY);
+				FLAG_UPD(vm, FLAG_CARRY, t_byte1 & 0x80)
+				t_byte1 <<= 1, t_byte1 += t_byte2 ? 1 : 0;
+				WRITE_BYTE(vm, t_addr, t_byte1);
+				t_byte2 = 1;
+			case OP_AND:
+				if (!t_byte2)
+					READ_BYTE(vm, t_addr, &t_byte1);
 				vm->A &= t_byte1;
 				FLAGS_NZ(vm, vm->A);
 				break;
-			case OP_EOR:
+
+			case OP_SRE:  // Composite
 				READ_BYTE(vm, t_addr, &t_byte1);
+				FLAG_UPD(vm, FLAG_CARRY, t_byte1 & 1);
+				t_byte1 >>= 1;
+				WRITE_BYTE(vm, t_addr, t_byte1);
+				t_byte2 = 1;
+			case OP_EOR:
+				if (!t_byte2)
+					READ_BYTE(vm, t_addr, &t_byte1);
 				vm->A ^= t_byte1;
 				FLAGS_NZ(vm, vm->A);
 				break;
-			case OP_ORA:
+
+			case OP_SLO:  // Composite
 				READ_BYTE(vm, t_addr, &t_byte1);
+				FLAG_UPD(vm, FLAG_CARRY, t_byte1 & 0x80)
+				t_byte1 <<= 1;
+				WRITE_BYTE(vm, t_addr, t_byte1);
+				t_byte2 = 1;
+			case OP_ORA:
+				if (!t_byte2)
+					READ_BYTE(vm, t_addr, &t_byte1);
 				vm->A |= t_byte1;
 				FLAGS_NZ(vm, vm->A);
 				break;

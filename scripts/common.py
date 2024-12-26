@@ -36,6 +36,7 @@ modes_suffix: Dict[str, str] = {
 
 
 mnemonics: Dict[str, int] = {
+    "RLA": 0,
     "ADC": 1,
     "AND": 2,
     "ASL": 3,
@@ -95,5 +96,8 @@ mnemonics: Dict[str, int] = {
     "LAX": 57,
     "SAX": 58,
     "DCP": 59,
-    "ISC": 60
+    "ISC": 60,
+    "SLO": 61,
+    "SRE": 62,
+    "RRA": 63
 }
