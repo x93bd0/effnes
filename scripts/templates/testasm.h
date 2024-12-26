@@ -93,7 +93,7 @@
 #define LSR_ZPX 0x56
 #define LSR_ABS 0x4E
 #define LSR_ABX 0x5E
-#define NOP 0xEA
+#define NOP 0xE2
 #define ORA 0x09
 #define ORA_ZPG 0x05
 #define ORA_ZPX 0x15
@@ -149,22 +149,11 @@
 #define STY_ZPG 0x84
 #define STY_ZPX 0x94
 #define STY_ABS 0x8C
+#define NOP_ZPG 0x64
+#define NOP_ZPX 0xF4
+#define NOP_ABS 0x0C
+#define NOP_ABX 0xFC
 
-const char* FROMASM[] = {
-  "BRK", "ORA", "ILG", "ILG", "ILG", "ORA", "ASL", "ILG", "PHP", "ORA", "ASL", "ILG", "ILG", "ORA", "ASL", "ILG",
-  "BPL", "ORA", "ILG", "ILG", "ILG", "ORA", "ASL", "ILG", "CLC", "ORA", "ILG", "ILG", "ILG", "ORA", "ASL", "ILG",
-  "JSR", "AND", "ILG", "ILG", "BIT", "AND", "ROL", "ILG", "PLP", "AND", "ROL", "ILG", "BIT", "AND", "ROL", "ILG",
-  "BMI", "AND", "ILG", "ILG", "ILG", "AND", "ROL", "ILG", "SEC", "AND", "ILG", "ILG", "ILG", "AND", "ROL", "ILG",
-  "RTI", "EOR", "ILG", "ILG", "ILG", "EOR", "LSR", "ILG", "PHA", "EOR", "LSR", "ILG", "JMP", "EOR", "LSR", "ILG",
-  "BVC", "EOR", "ILG", "ILG", "ILG", "EOR", "LSR", "ILG", "CLI", "EOR", "ILG", "ILG", "ILG", "EOR", "LSR", "ILG",
-  "RTS", "ADC", "ILG", "ILG", "ILG", "ADC", "ROR", "ILG", "PLA", "ADC", "ROR", "ILG", "JMP", "ADC", "ROR", "ILG",
-  "BVS", "ADC", "ILG", "ILG", "ILG", "ADC", "ROR", "ILG", "SEI", "ADC", "ILG", "ILG", "ILG", "ADC", "ROR", "ILG",
-  "ILG", "STA", "ILG", "ILG", "STY", "STA", "STX", "ILG", "DEY", "ILG", "TXA", "ILG", "STY", "STA", "STX", "ILG",
-  "BCC", "STA", "ILG", "ILG", "STY", "STA", "STX", "ILG", "TYA", "STA", "TXS", "ILG", "ILG", "STA", "ILG", "ILG",
-  "LDY", "LDA", "LDX", "ILG", "LDY", "LDA", "LDX", "ILG", "TAY", "LDA", "TAX", "ILG", "LDY", "LDA", "LDX", "ILG",
-  "BCS", "LDA", "ILG", "ILG", "LDY", "LDA", "LDX", "ILG", "CLV", "LDA", "TSX", "ILG", "LDY", "LDA", "LDX", "ILG",
-  "CPY", "CMP", "ILG", "ILG", "CPY", "CMP", "DEC", "ILG", "INY", "CMP", "DEX", "ILG", "CPY", "CMP", "DEC", "ILG",
-  "BNE", "CMP", "ILG", "ILG", "ILG", "CMP", "DEC", "ILG", "CLD", "CMP", "ILG", "ILG", "ILG", "CMP", "DEC", "ILG",
-  "CPX", "SBC", "ILG", "ILG", "CPX", "SBC", "INC", "ILG", "INX", "SBC", "NOP", "ILG", "CPX", "SBC", "INC", "ILG",
-  "BEQ", "SBC", "ILG", "ILG", "ILG", "SBC", "INC", "ILG", "SED", "SBC", "ILG", "ILG", "ILG", "SBC", "INC", "ILG"
-};
+const char* FROMASM[] = {{
+{fromasm_table}
+}};

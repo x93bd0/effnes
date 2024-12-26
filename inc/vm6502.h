@@ -24,6 +24,7 @@ typedef struct VM6502 {
 
 	LFRMethod read;
 	WTRMethod write;
+	uint16_t debug_addr;
 } VM6502;
 
 VM6502* VM6502_init(LFRMethod, WTRMethod);
@@ -40,12 +41,13 @@ uintmx_t VM6502_run_eff(VM6502*, uintmx_t);
 #define FLAG_INTDIS   0b100
 #define FLAG_DECIMAL  0b1000
 #define FLAG_BREAK    0b10000
+#define FLAG_RESERVED 0b100000
 #define FLAG_OVERFLOW 0b1000000
 #define FLAG_NEGATIVE 0b10000000
 
-#define NMI_VECTOR  0xfffa
-#define RST_VECTOR  0xfffc
-#define BRK_VECTOR  0xfffe
+#define NMI_VECTOR  0xFFFA
+#define RST_VECTOR  0xFFFC
+#define BRK_VECTOR  0xFFFE
 
 #define RAMIO_read(vm, pos, size, out) \
 	VM6502_ramio(vm)->read(vm, VM6502_ramio(vm), pos, size, (uint8_t*)(out));

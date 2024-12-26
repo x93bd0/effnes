@@ -10,34 +10,34 @@ typedef struct Mapper {
 	WTRMethod write;
 } Mapper;
 
-typedef char* MapperInf;
-MapperInf	MI_fetch		(char* ROM);
+typedef char* MapperHeader;
+MapperHeader	MI_fetch		(char* ROM);
 
 // iNES flags
-uint8_t		MI_isINES		(MapperInf INF);
-uint16_t	MI_mapper		(MapperInf INF);
-uint8_t		MI_nmarg		(MapperInf INF);
+uint8_t		MI_isINES		(MapperHeader INF);
+uint16_t	MI_mapper		(MapperHeader INF);
+uint8_t		MI_nmarg		(MapperHeader INF);
 
-uint8_t		MI_prgrom		(MapperInf INF);
-uint8_t		MI_chrrom		(MapperInf INF);
-uint8_t		MI_prgram		(MapperInf INF);
+uint8_t		MI_prgrom		(MapperHeader INF);
+uint8_t		MI_chrrom		(MapperHeader INF);
+uint8_t		MI_prgram		(MapperHeader INF);
 
-uint8_t		MI_battery	(MapperInf INF);
-uint8_t		MI_trainer	(MapperInf INF);
-uint8_t		MI_altnml		(MapperInf INF);
-uint8_t		MI_isVSU		(MapperInf INF);
-uint8_t		MI_isPLC		(MapperInf INF);
-uint8_t		MI_isNTSC		(MapperInf INF);
-uint8_t		MI_isPAL		(MapperInf INF);
-uint8_t		MI_haspram	(MapperInf INF);
-uint8_t		MI_busconf	(MapperInf INF);
+uint8_t		MI_battery	(MapperHeader INF);
+uint8_t		MI_trainer	(MapperHeader INF);
+uint8_t		MI_altnml		(MapperHeader INF);
+uint8_t		MI_isVSU		(MapperHeader INF);
+uint8_t		MI_isPLC		(MapperHeader INF);
+uint8_t		MI_isNTSC		(MapperHeader INF);
+uint8_t		MI_isPAL		(MapperHeader INF);
+uint8_t		MI_haspram	(MapperHeader INF);
+uint8_t		MI_busconf	(MapperHeader INF);
 
-uintmx_t	MI_fprgoff	(MapperInf INF);
-uintmx_t	MI_fchroff	(MapperInf INF);
-uintmx_t	MI_fpiroff	(MapperInf INF);
-uintmx_t	MI_fprmoff	(MapperInf INF);
-uintmx_t	MI_fsenoff	(MapperInf INF);
+uintmx_t	MI_fprgoff	(MapperHeader INF);
+uintmx_t	MI_fchroff	(MapperHeader INF);
+uintmx_t	MI_fpiroff	(MapperHeader INF);
+uintmx_t	MI_fprmoff	(MapperHeader INF);
+uintmx_t	MI_fsenoff	(MapperHeader INF);
 
-void			MI_destroy	(MapperInf INF);
+void			MI_destroy	(MapperHeader INF);
 
 #endif

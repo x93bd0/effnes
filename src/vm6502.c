@@ -1,6 +1,7 @@
 #include "../inc/vm6502.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h> // TODO: Remove
 
 // TODO: st_push816, st_pop816
 // TODO: Possible bug in CP* (No substraction was done)
@@ -29,6 +30,8 @@ void read_byte(VM6502* vm, u16 addr, u8* out)
 #define	unset_flag(ins, flag)			ins->status ^= (flag) & (ins)->status
 #define	upd_flag(ins, flag, val)	ins->status ^= ((flag) & (ins)->status) ^ ((val) ? (flag) : 0)
 #define	fetch_flag(ins, flag)			(((ins)->status & (flag)) > 0)
+
+#define branch(ins, addr)
 
 #define	nz_flags(ins, no)					upd_flag(ins, FLAG_NEGATIVE, (no) & 0x80); \
 																	upd_flag(ins, FLAG_ZERO, no == 0);
@@ -139,6 +142,7 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 		uint16_t faddr;
 		uint8_t b1, b2;
 
+		ins->debug_addr = 0;
 		switch (am)
 		{
 			case MODE_IMM:
@@ -168,13 +172,13 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				break;
 			case MODE_ABX:
 				next_addr(ins, &faddr);
-				ett += ((faddr + (int8_t)ins->iX) & 0xff00) != (ins->pc & 0xff00);
-				faddr += (int8_t)ins->iX;
+				ett += ((faddr + ins->iX) & 0xff00) != (faddr & 0xff00);
+				faddr += ins->iX;
 				break;
 			case MODE_ABY:
 				next_addr(ins, &faddr);
-				ett += ((faddr + (int8_t)ins->iY) & 0xff00) != (ins->pc & 0xff00);
-				faddr += (int8_t)ins->iY;
+				ett += ((faddr + ins->iY) & 0xff00) != (faddr & 0xff00);
+				faddr += ins->iY;
 				break;
 			case MODE_ZPX:
 				next_byte(ins, &b1);
@@ -191,6 +195,7 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				read_byte(ins, (b1 + (int8_t)ins->iX) % 256, &b2);
 				read_byte(ins, (b1 + (int8_t)ins->iX + 1) % 256, &b3);
 				faddr = b2 + (b3 << 8);
+				ins->debug_addr = 1;
 				break;
 			}
 			case MODE_IIY:
@@ -199,13 +204,16 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				next_byte(ins, &b1);
 				read_byte(ins, b1, &b2);
 				read_byte(ins, (b1 + 1) % 256, &b3);
-				ett += ((b2 + (b3 << 8) + ins->iY) & 0xff00) != (ins->pc & 0xff00);
-				faddr = b2 + (b3 << 8) + ins->iY;	 // TODO: Probably wrong
+				faddr = b2 + (b3 << 8);
+				ett += ((faddr + ins->iY) & 0xFF00) != (faddr & 0xFF00);
+				faddr += ins->iY;
 				break;
 			}
 			default:
 				break;
 		}
+
+		ins->read(ins, faddr, 1, &ins->ExInterrupt);
 
 		switch (op)
 		{
@@ -241,40 +249,36 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				break;
 			case OP_BCC:
 				if (!fetch_flag(ins, FLAG_CARRY))
-				{ ett = 1; ins->pc = faddr; }
+				{ ett++; ins->pc = faddr; }
 				break;
 			case OP_BCS:
 				if (fetch_flag(ins, FLAG_CARRY))
-				{ ett = 1; ins->pc = faddr; }
+				{ ett++; ins->pc = faddr; }
 				break;
 			case OP_BEQ:
 				if (fetch_flag(ins, FLAG_ZERO))
-				{ ett = 1; ins->pc = faddr; }
+				{ ett++; ins->pc = faddr; }
 				break;
 			case OP_BIT:
-				if (am == MODE_ACC)
-				{
-					nz_flags(ins, ins->Acc);
-					upd_flag(ins, FLAG_OVERFLOW, ins->Acc & 0x40);
-				} else
-				{
-					read_byte(ins, faddr, &b1);
-					uint8_t res = ins->Acc & b1;
-					nz_flags(ins, res);
-					upd_flag(ins, FLAG_OVERFLOW, res & 0x40);
-				}
+				read_byte(ins, faddr, &b1);
+				uint8_t res = ins->Acc & b1;
+				nz_flags(ins, res);
+				upd_flag(ins, FLAG_OVERFLOW, res & 0x40);
+				// TODO: Optimize;
+				ins->status ^= (ins->status & 0b11000000);
+				ins->status |= b1 & 0b11000000;
 				break;
 			case OP_BMI:
 				if (fetch_flag(ins, FLAG_NEGATIVE))
-				{ ett = 1; ins->pc = faddr; }
+				{ ett++; ins->pc = faddr; }
 				break;
 			case OP_BNE:
 				if (!fetch_flag(ins, FLAG_ZERO))
-				{ ett = 1; ins->pc = faddr; }
+				{ ett++; ins->pc = faddr; }
 				break;
-			case OP_BPL: // Approved
+			case OP_BPL:
 				if (!fetch_flag(ins, FLAG_NEGATIVE))
-				{ ett = 1; ins->pc = faddr; }
+				{ ett++; ins->pc = faddr; }
 				break;
 			case OP_BRK:
 				b1 = (ins->pc >> 8) & 0xff;
@@ -289,11 +293,11 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				break;
 			case OP_BVC:
 				if (!fetch_flag(ins, FLAG_OVERFLOW))
-				{ ett = 1; ins->pc = faddr; }
+				{ ett++; ins->pc = faddr; }
 				break;
 			case OP_BVS:
 				if (fetch_flag(ins, FLAG_OVERFLOW))
-				{ ett = 1; ins->pc = faddr; }
+				{ ett++; ins->pc = faddr; }
 				break;
 			case OP_CLC:
 				unset_flag(ins, FLAG_CARRY);
@@ -321,6 +325,13 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				read_byte(ins, faddr, &b1);
 				upd_flag(ins, FLAG_CARRY, ins->iY >= b1);
 				nz_flags(ins, ins->iY - b1);	// TODO: Possible bug
+				break;
+			case OP_DCP:
+				read_byte(ins, faddr, &b1);
+				--b1;
+				upd_flag(ins, FLAG_CARRY, ins->Acc >= b1);
+				ins->write(ins, faddr, 1, &b1);
+				nz_flags(ins, ins->Acc - b1);	// TODO: Possible bug
 				break;
 			case OP_DEC:
 				read_byte(ins, faddr, &b1);
@@ -357,6 +368,17 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				ins->iY = ins->iY + 1;
 				nz_flags(ins, ins->iY);
 				break;
+			case OP_ISC:
+				read_byte(ins, faddr, &b1);
+				b1++;
+				ins->write(ins, faddr, 1, &b1);
+				b1 = ~b1;
+				faddr = ins->Acc + b1 + fetch_flag(ins, FLAG_CARRY);
+				upd_flag(ins, FLAG_CARRY, faddr > 0xff);
+				upd_flag(ins, FLAG_OVERFLOW, (~(ins->Acc ^ b1) & (ins->Acc ^ faddr) & 0x80));
+				ins->Acc = faddr & 0xff;
+				nz_flags(ins, ins->Acc);
+				break;
 			case OP_JMP:	// Partially implemented, see http://www.6502.org/tutorials/6502opcodes.html#JMP for more info
 				ins->pc = faddr;
 				break;
@@ -367,6 +389,11 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				b1 = ins->pc & 0xff;
 				st_push8(ins, b1);
 				ins->pc = faddr;
+				break;
+			case OP_LAX:
+				read_byte(ins, faddr, &ins->Acc);
+				read_byte(ins, faddr, &ins->iX);
+				nz_flags(ins, ins->iX);
 				break;
 			case OP_LDA:
 				read_byte(ins, faddr, &ins->Acc);
@@ -408,14 +435,17 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				ins->write(ins, 0x100 + ins->Sp--, 1, &ins->Acc);
 				break;
 			case OP_PHP:
-				ins->write(ins, 0x100 + ins->Sp++, 1, &ins->status);
+				b1 = ins->status | FLAG_BREAK;
+				ins->write(ins, 0x100 + ins->Sp--, 1, &b1);
 				break;
 			case OP_PLA:
 				read_byte(ins, 0x100 + ++ins->Sp, &ins->Acc);
 				nz_flags(ins, ins->Acc);
 				break;
 			case OP_PLP:
-				read_byte(ins, 0x100 + --ins->Sp, &ins->status);
+				read_byte(ins, 0x100 + ++ins->Sp, &ins->status);
+				ins->status ^= (ins->status) & (FLAG_BREAK);
+				ins->status |= FLAG_RESERVED;
 				break;
 			case OP_ROL:
 				if (am == MODE_ACC)
@@ -453,12 +483,18 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				break;
 			case OP_RTI:
 				st_pop8(ins, &ins->status);
+				ins->status ^= ins->status & FLAG_BREAK;
+				ins->status |= FLAG_RESERVED;
 				st_pop8(ins, &b1); st_pop8(ins, &b2);
 				ins->pc = (b2 << 8) + b1;
 				break;
 			case OP_RTS:
 				st_pop8(ins, &b1); st_pop8(ins, &b2);
 				ins->pc = (b2 << 8) + b1 + 1;
+				break;
+			case OP_SAX:
+				b1 = ins->Acc & ins->iX;
+				ins->write(ins, faddr, 1, &b1);
 				break;
 			case OP_SBC:
 				read_byte(ins, faddr, &b1);
@@ -505,7 +541,6 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				break;
 			case OP_TXS:
 				ins->Sp = ins->iX;
-				nz_flags(ins, ins->iX);
 				break;
 			case OP_TYA:
 				ins->Acc = ins->iY;
@@ -516,7 +551,9 @@ uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
 				break;
 		}
 
-		ins->cc += tim + (ett == 2);
+		ins->debug_addr = faddr;
+		ins->read(ins, faddr, 1, &ins->ExInterrupt);
+		ins->cc += 1 + tim + (ett >= 2);
 		if (ins->halted) break;
 	}
 
