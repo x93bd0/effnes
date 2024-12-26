@@ -39,7 +39,7 @@ for x in range(min(len(mine_raw), len(correct_raw))):
     mCyc: int = int(mine[91:].split(' ')[0])
 
     if gCyc - last_cycle[0] != mCyc - last_cycle[1]:
-        print("CYCLE MISMATCH (" + last_op + "): (line " + str(x) + ")")
+        print("CYCLE MISSMATCH (" + last_op + "): (line " + str(x) + ")")
         db: int = (gCyc - last_cycle[0]) - (mCyc - last_cycle[1])
         print("\tdiffby:", ["-", "+"][db < 0] + str(abs(db)))
 

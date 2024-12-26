@@ -1,56 +1,64 @@
 #include "../inc/vm6502.h"
+#include "../inc/ops6502.h"
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h> // TODO: Remove
+#include <stdio.h>  // TODO: Remove
 
-// TODO: st_push816, st_pop816
-// TODO: Possible bug in CP* (No substraction was done)
-
-#define u16 uint16_t
-#define u8  uint8_t
-
-/*
-void read_addr(VM6502* vm, u16 addr, u16* out)
-{
-	vm->read(vm, addr, 2, (u8*)out);
+#define READ_BYTE(ins, addr, out)	ins->read(ins, addr, 1, out)
+#define READ_ADDR(ins, addr, out)	ins->read(ins, addr, 2, (uint8_t*)(out))
+#define WRITE_BYTE(ins, addr, in)	ins->write(ins, addr, 1, &in)
+#define NEXT_BYTE(ins, out)			READ_BYTE(ins, (ins)->PC++, out)
+#define NEXT_ADDR(ins, out)			{\
+	READ_ADDR(ins, (ins)->PC, out); \
+	ins->PC += 2; \
 }
 
-void read_byte(VM6502* vm, u16 addr, u8* out)
-{
-	vm->read(vm, addr, 1, out);
+#define FLAG_ENB(ins, flag)			(ins)->P |= flag
+#define FLAG_DIS(ins, flag)			(ins)->P &= ~(flag)
+#define FLAG_GET(ins, flag)			((ins)->P & (flag))
+#define FLAG_UPD(ins, flag, stat)	if (stat) { FLAG_ENB(ins, flag); } \
+									else { FLAG_DIS(ins, flag); }
+
+#define FLAGS_NZ(ins, data)			{\
+	FLAG_UPD(ins, FLAG_NEGATIVE, (data) & 0x80); \
+	FLAG_UPD(ins, FLAG_ZERO, !(data)); \
 }
-*/
 
-#define	read_byte(ins, addr, out)	ins->read(ins, addr, 1, out)
-#define	read_addr(ins, addr, out)	ins->read(ins, addr, 2, (uint8_t*)(out))
-#define	next_byte(ins, out)				read_byte(ins, (ins)->pc++, out)
-#define	next_addr(ins, out)				{read_addr(ins, (ins)->pc, out); ins->pc += 2;}
+#define STACK_PSH8(ins, data)		{WRITE_BYTE(ins, ins->S-- | 0x100, data);printf("PUSH %#2x ", data);}
+#define STACK_POP8(ins, out)		{READ_BYTE(ins, ++ins->S | 0x100, out);printf("READ %#2x ", *out);}
+#define STACK_PSH16(ins, data)		{ \
+	uint8_t temp = data >> 8; \
+	STACK_PSH8(ins, temp); \
+	temp = data & 0xff; \
+	STACK_PSH8(ins, temp); \
+}
+#define STACK_POP16(ins, out)		{ \
+	uint8_t temp; \
+	STACK_POP8(ins, &temp); \
+	STACK_POP8(ins, (uint8_t*)out); \
+	(*out) = (*out << 8) + temp; \
+}
 
-#define	set_flag(ins, flag)				ins->status ^= ((flag) & (ins)->status) ^ (flag)
-#define	unset_flag(ins, flag)			ins->status ^= (flag) & (ins)->status
-#define	upd_flag(ins, flag, val)	ins->status ^= ((flag) & (ins)->status) ^ ((val) ? (flag) : 0)
-#define	fetch_flag(ins, flag)			(((ins)->status & (flag)) > 0)
 
-#define branch(ins, addr)
-
-#define	nz_flags(ins, no)					upd_flag(ins, FLAG_NEGATIVE, (no) & 0x80); \
-																	upd_flag(ins, FLAG_ZERO, no == 0);
-#define	st_push8(ins, no)					ins->write(ins, ins->Sp | 0x100, 1, &no); \
-																	ins->Sp = !ins->Sp ? 0xff : ins->Sp - 1;
-#define	st_pop8(ins, out)					ins->Sp = (ins->Sp + 1) & 0xff; \
-																	read_byte(ins, ins->Sp | 0x100, out);
-
-VM6502* VM6502_init(LFRMethod read, WTRMethod write)
+VM6502* VM6502_init(VM6502_RamIO ramio, void* slot)
 {
 	VM6502* ins = malloc(sizeof(VM6502));
-	ins->read = read, ins->write = write, ins->slot = NULL;
-	ins->cc = ins->halted = 0;
+	ins->read = ramio.read;
+	ins->write = ramio.write;
+
+	ins->slot = slot;
+	ins->PC = ins->X = ins->Y = ins->A \
+			= ins->S = ins->P = ins->H = 0;
+
+	ins->ex_interrupt = 0;
+	ins->cycles = 0;
+
 	return ins;
 }
 
-void VM6502_store(VM6502* ins, void* slotdata)
+void VM6502_store(VM6502* ins, void* data)
 {
-	ins->slot = slotdata;
+	ins->slot = data;
 }
 
 inline void* VM6502_slot(VM6502* ins)
@@ -68,20 +76,18 @@ inline void* VM6502_slot(VM6502* ins)
 
 void VM6502_reset(VM6502* ins)
 {
-	ins->ExInterrupt = 0;
-	uint16_t addr;
-	read_addr(ins, 0xfffc, &addr);
-	ins->pc = addr;
+	ins->ex_interrupt = 0;
+	READ_ADDR(ins, RST_VECTOR, &ins->PC);
 
-	uint8_t in = 0;
-	if (ins->cc == 0) {
-		ins->status = 0x36;
-		ins->Acc = ins->iX =
-			ins->iY = ins->cc = 0;
-		ins->Sp = 0xff;
+	uint8_t null = 0;
+	WRITE_BYTE(ins, 0x4015, null);
 
-		ins->write(ins, 0x4015, 1, &in);
-		ins->write(ins, 0x4017, 1, &in);
+	if (ins->cycles == 0) {
+		ins->P = 0x36;
+		ins->S = 0xff;
+		ins->A = ins->X = ins->Y = 0;
+
+		WRITE_BYTE(ins, 0x4017, null);
 
 		uint8_t chunk[20];
 		memset(chunk, 0, 20);
@@ -91,471 +97,488 @@ void VM6502_reset(VM6502* ins)
 		return;
 	}
 
-	ins->cc = 0;
-	ins->write(ins, 0x4015, 1, &in);
+	ins->cycles = 0;
 	// TODO: Set status ORed with 0x04 & reset APU things
-	set_flag(ins, FLAG_INTDIS);
+	FLAG_ENB(ins, FLAG_INTDIS);
 }
-
-#ifdef MOS6502_DEBUG
-void __MOS6502_DEBUG(VM6502*);
-#endif
 
 void VM6502_NMI(VM6502* ins)
 {
-	uint16_t faddr;
-	uint8_t b1;
+	uint16_t t_addr;
+	uint8_t t_byte;
 
-	b1 = (ins->pc >> 8) & 0xff;
-	st_push8(ins, b1);
-	b1 = ins->pc & 0xff;
-	st_push8(ins, b1);
-	b1 = ins->status & (~FLAG_BREAK);
-	st_push8(ins, b1);
-	set_flag(ins, FLAG_INTDIS);
-	read_addr(ins, NMI_VECTOR, &faddr);
-	ins->pc = faddr;
+	t_byte = (ins->PC >> 8) & 0xff;
+	STACK_PSH8(ins, t_byte);
+	t_byte = ins->PC & 0xff;
+	STACK_PSH8(ins, t_byte);
+	t_byte = ins->S & (~FLAG_BREAK);
+	STACK_PSH8(ins, t_byte);
+	FLAG_ENB(ins, FLAG_INTDIS);
+	READ_ADDR(ins, NMI_VECTOR, &t_addr);
+	ins->PC = t_addr;
 }
 
-// TODO: Better io_write
-// TODO: Optimize upd_flag
-// TODO: Check if page boundary crossed
-uintmx_t VM6502_run_eff(VM6502* ins, uintmx_t cycles)
+uintmx_t VM6502_run(VM6502* vm, uintmx_t cycles)
 {
-	ins->cc = 0;
-	while (ins->cc < cycles && !ins->ExInterrupt)
+	vm->cycles = 0;
+	while (vm->cycles < cycles && !vm->ex_interrupt)
 	{
-		uint8_t raw_op;
-		next_byte(ins, &raw_op);
+		uint8_t opcode;
+		NEXT_BYTE(vm, &opcode);
 
-		if (!JUMPTABLE[raw_op])
+		// Illegal opcode detection
+		if (!JUMPTABLE[opcode])
 		{
-			ins->halted = 1;
+			vm->H = 1;
 			break;
 		}
 
-		uint8_t op = JUMPTABLE[raw_op] >> 9,
-			am = (JUMPTABLE[raw_op] >> 5) & 0b1111,
-			tim = (JUMPTABLE[raw_op] >> 2) & 0b111,
-			ett = (JUMPTABLE[raw_op] >> 1) & 0x1;
+		uint8_t internal_opcode	= JUMPTABLE[opcode] >> 9,
+				address_mode	= (JUMPTABLE[opcode] >> 5) & 0b1111,
+				timing			= (JUMPTABLE[opcode] >> 2) & 0b111,
+				special_timing	= (JUMPTABLE[opcode] >> 1) & 0b1;
 
-		uint16_t faddr;
-		uint8_t b1, b2;
+		uint16_t t_addr = 0;
+		uint8_t t_byte1, t_byte2;
 
-		ins->debug_addr = 0;
-		switch (am)
+		switch (address_mode)
 		{
-			case MODE_IMM:
-				faddr = ins->pc++;
+			case ADDRMODE_IMMED:
+				t_addr = vm->PC++;
 				break;
-			case MODE_REL:
-				next_byte(ins, &b1);
-				faddr = ins->pc + (int8_t)b1;
+			case ADDRMODE_RELAT:
+				NEXT_BYTE(vm, &t_byte1);
+				t_addr = vm->PC + (int8_t)t_byte1;
 				break;
-			case MODE_ABS:
-				next_addr(ins, &faddr);
+			case ADDRMODE_ABSOL:
+				NEXT_ADDR(vm, &t_addr);
 				break;
-			case MODE_IND:
-				next_addr(ins, &faddr);
-				if (faddr && 0xff == 0xff)
+			case ADDRMODE_INDIR:
+				NEXT_ADDR(vm, &t_addr);
+				if (t_addr && 0xFF == 0xFF)
 				{
-					uint8_t b2, msb = faddr >> 8;
-					read_byte(ins, faddr, &b1);
-					read_byte(ins, (msb << 8) + ((faddr + 1) & 0xff), &b2);
-					faddr = (b2 << 8) | b1;
+					READ_BYTE(vm, t_addr, &t_byte1);
+					READ_BYTE(vm, (t_addr & 0xff00) + ((t_addr + 1) & 0xff), &t_byte2);
+					t_addr = (t_byte2 << 8) | t_byte1;
 				} else
-					read_addr(ins, faddr, &faddr);
+					READ_ADDR(vm, t_addr, &t_addr);
 				break;
-			case MODE_ZPG:
-				next_byte(ins, &b1);
-				faddr = b1;
+			case ADDRMODE_ZRPAG:
+				NEXT_BYTE(vm, (uint8_t*)&t_addr);
 				break;
-			case MODE_ABX:
-				next_addr(ins, &faddr);
-				ett += ((faddr + ins->iX) & 0xff00) != (faddr & 0xff00);
-				faddr += ins->iX;
+			case ADDRMODE_ABSOX:
+				NEXT_ADDR(vm, &t_addr);
+				special_timing += ((t_addr + vm->X) & 0xff00) != (t_addr & 0xff00);
+				t_addr += vm->X;
 				break;
-			case MODE_ABY:
-				next_addr(ins, &faddr);
-				ett += ((faddr + ins->iY) & 0xff00) != (faddr & 0xff00);
-				faddr += ins->iY;
+			case ADDRMODE_ABSOY:
+				NEXT_ADDR(vm, &t_addr);
+				special_timing += ((t_addr + vm->Y) & 0xff00) != (t_addr & 0xff00);
+				t_addr += vm->Y;
 				break;
-			case MODE_ZPX:
-				next_byte(ins, &b1);
-				faddr = (b1 + (int8_t)ins->iX) % 256;
+			case ADDRMODE_ZRPAX:
+				NEXT_BYTE(vm, &t_byte1);
+				t_addr = (t_byte1 + (int8_t)vm->X) % 0x100;
 				break;
-			case MODE_ZPY:
-				next_byte(ins, &b1);
-				faddr = (b1 + (int8_t)ins->iY) % 256;
+			case ADDRMODE_ZRPAY:
+				NEXT_BYTE(vm, &t_byte1);
+				t_addr = (t_byte1 + (int8_t)vm->Y) % 0x100;
 				break;
-			case MODE_IIX:
-			{
-				uint8_t b3;
-				next_byte(ins, &b1);
-				read_byte(ins, (b1 + (int8_t)ins->iX) % 256, &b2);
-				read_byte(ins, (b1 + (int8_t)ins->iX + 1) % 256, &b3);
-				faddr = b2 + (b3 << 8);
-				ins->debug_addr = 1;
+			case ADDRMODE_INDIX:
+				NEXT_BYTE(vm, &t_byte1);
+				READ_BYTE(vm, (t_byte1 + (int8_t)vm->X) % 0x100, &t_byte2);
+				READ_BYTE(vm, (t_byte1 + (int8_t)vm->X + 1) % 0x100, (uint8_t*)&t_addr);
+				t_addr = (t_addr << 8) + t_byte2;
 				break;
-			}
-			case MODE_IIY:
-			{
-				uint8_t b3;
-				next_byte(ins, &b1);
-				read_byte(ins, b1, &b2);
-				read_byte(ins, (b1 + 1) % 256, &b3);
-				faddr = b2 + (b3 << 8);
-				ett += ((faddr + ins->iY) & 0xFF00) != (faddr & 0xFF00);
-				faddr += ins->iY;
+			case ADDRMODE_INDIY:
+				NEXT_BYTE(vm, &t_byte1);
+				READ_BYTE(vm, t_byte1, (uint8_t*)&t_addr);
+				READ_BYTE(vm, (t_byte1 + 1) % 0x100, &t_byte2);
+				t_addr += t_byte2 << 8;
+				special_timing += ((t_addr + vm->Y) & 0xff00) != (t_addr & 0xff00);
+				t_addr += vm->Y;
 				break;
-			}
 			default:
 				break;
 		}
 
-		ins->read(ins, faddr, 1, &ins->ExInterrupt);
+		// TODO: make internal_opcode ordered
+		// 		(this helps the compiler find the opcodes easily)
+		// TODO: Collapse similar opcodeds (T**) into one instruction
+		t_byte2 = 0;  // Used as a flag in some cases
 
-		switch (op)
+		switch (internal_opcode)
 		{
-			case OP_ADC:
-				read_byte(ins, faddr, &b1);
-				faddr = ins->Acc + b1 + fetch_flag(ins, FLAG_CARRY);
-				upd_flag(ins, FLAG_CARRY, faddr > 0xff);
-				upd_flag(ins, FLAG_OVERFLOW, (~(ins->Acc ^ b1) & (ins->Acc ^ faddr) & 0x80));
-				ins->Acc = faddr & 0xff;
-				nz_flags(ins, ins->Acc);
-				break;
-			case OP_AND:
-				read_byte(ins, faddr, &b1);
-				ins->Acc &= b1;
-				nz_flags(ins, ins->Acc);
-				break;
-			case OP_ASL:
-				if (am == MODE_ACC)
-				{
-					b1 = (ins->Acc << 1) & 0xff;
-					b2 = ins->Acc & 0x80;
-					ins->Acc = b1;
-				} else
-				{
-					read_byte(ins, faddr, &b1);
-					b2 = b1 & 0x80;
-					b1 = (b1 << 1) & 0xff;
-					ins->write(ins, faddr, 1, &b1);
-				}
-
-				nz_flags(ins, b1);
-				upd_flag(ins, FLAG_CARRY, b2);
-				break;
-			case OP_BCC:
-				if (!fetch_flag(ins, FLAG_CARRY))
-				{ ett++; ins->pc = faddr; }
-				break;
-			case OP_BCS:
-				if (fetch_flag(ins, FLAG_CARRY))
-				{ ett++; ins->pc = faddr; }
-				break;
-			case OP_BEQ:
-				if (fetch_flag(ins, FLAG_ZERO))
-				{ ett++; ins->pc = faddr; }
-				break;
-			case OP_BIT:
-				read_byte(ins, faddr, &b1);
-				uint8_t res = ins->Acc & b1;
-				nz_flags(ins, res);
-				upd_flag(ins, FLAG_OVERFLOW, res & 0x40);
-				// TODO: Optimize;
-				ins->status ^= (ins->status & 0b11000000);
-				ins->status |= b1 & 0b11000000;
-				break;
-			case OP_BMI:
-				if (fetch_flag(ins, FLAG_NEGATIVE))
-				{ ett++; ins->pc = faddr; }
-				break;
-			case OP_BNE:
-				if (!fetch_flag(ins, FLAG_ZERO))
-				{ ett++; ins->pc = faddr; }
-				break;
-			case OP_BPL:
-				if (!fetch_flag(ins, FLAG_NEGATIVE))
-				{ ett++; ins->pc = faddr; }
-				break;
-			case OP_BRK:
-				b1 = (ins->pc >> 8) & 0xff;
-				st_push8(ins, b1);
-				b1 = ins->pc & 0xff;
-				st_push8(ins, b1);
-				b1 = ins->status | FLAG_BREAK;
-				st_push8(ins, b1);
-				set_flag(ins, FLAG_INTDIS);
-				read_addr(ins, 0xfffe, &faddr);
-				ins->pc = faddr;
-				break;
-			case OP_BVC:
-				if (!fetch_flag(ins, FLAG_OVERFLOW))
-				{ ett++; ins->pc = faddr; }
-				break;
-			case OP_BVS:
-				if (fetch_flag(ins, FLAG_OVERFLOW))
-				{ ett++; ins->pc = faddr; }
-				break;
-			case OP_CLC:
-				unset_flag(ins, FLAG_CARRY);
-				break;
-			case OP_CLD:
-				unset_flag(ins, FLAG_DECIMAL);
-				break;
-			case OP_CLI:
-				unset_flag(ins, FLAG_INTDIS);
-				break;
-			case OP_CLV:
-				unset_flag(ins, FLAG_OVERFLOW);
-				break;
-			case OP_CMP:
-				read_byte(ins, faddr, &b1);
-				upd_flag(ins, FLAG_CARRY, ins->Acc >= b1);
-				nz_flags(ins, ins->Acc - b1);	// TODO: Possible bug
-				break;
-			case OP_CPX:
-				read_byte(ins, faddr, &b1);
-				upd_flag(ins, FLAG_CARRY, ins->iX >= b1);
-				nz_flags(ins, ins->iX - b1);	// TODO: Possible bug
-				break;
-			case OP_CPY:
-				read_byte(ins, faddr, &b1);
-				upd_flag(ins, FLAG_CARRY, ins->iY >= b1);
-				nz_flags(ins, ins->iY - b1);	// TODO: Possible bug
-				break;
-			case OP_DCP:
-				read_byte(ins, faddr, &b1);
-				--b1;
-				upd_flag(ins, FLAG_CARRY, ins->Acc >= b1);
-				ins->write(ins, faddr, 1, &b1);
-				nz_flags(ins, ins->Acc - b1);	// TODO: Possible bug
-				break;
-			case OP_DEC:
-				read_byte(ins, faddr, &b1);
-				--b1;
-				// TODO: Try to do a 'unsafe_write'
-				ins->write(ins, faddr, 1, &b1);
-				nz_flags(ins, b1);
-				break;
-			case OP_DEX:
-				ins->iX = ins->iX - 1;
-				nz_flags(ins, ins->iX);
-				break;
-			case OP_DEY:
-				ins->iY = ins->iY - 1;
-				nz_flags(ins, ins->iY);
-				break;
-			case OP_EOR:
-				read_byte(ins, faddr, &b1);
-				ins->Acc ^= b1;
-				nz_flags(ins, ins->Acc);
-				break;
-			case OP_INC:
-				read_byte(ins, faddr, &b1);
-				++b1;
-				nz_flags(ins, b1);
-				ins->write(ins, faddr, 1, &b1);
-				// TODO: OVERFLOW???
-				break;
-			case OP_INX:
-				ins->iX = ins->iX + 1;
-				nz_flags(ins, ins->iX);
-				break;
-			case OP_INY:
-				ins->iY = ins->iY + 1;
-				nz_flags(ins, ins->iY);
-				break;
-			case OP_ISC:
-				read_byte(ins, faddr, &b1);
-				b1++;
-				ins->write(ins, faddr, 1, &b1);
-				b1 = ~b1;
-				faddr = ins->Acc + b1 + fetch_flag(ins, FLAG_CARRY);
-				upd_flag(ins, FLAG_CARRY, faddr > 0xff);
-				upd_flag(ins, FLAG_OVERFLOW, (~(ins->Acc ^ b1) & (ins->Acc ^ faddr) & 0x80));
-				ins->Acc = faddr & 0xff;
-				nz_flags(ins, ins->Acc);
-				break;
-			case OP_JMP:	// Partially implemented, see http://www.6502.org/tutorials/6502opcodes.html#JMP for more info
-				ins->pc = faddr;
-				break;
-			case OP_JSR:
-				ins->pc--;
-				b1 = (ins->pc >> 8) & 0xff;
-				st_push8(ins, b1);
-				b1 = ins->pc & 0xff;
-				st_push8(ins, b1);
-				ins->pc = faddr;
-				break;
-			case OP_LAX:
-				read_byte(ins, faddr, &ins->Acc);
-				read_byte(ins, faddr, &ins->iX);
-				nz_flags(ins, ins->iX);
-				break;
+			// Memory / Registers
 			case OP_LDA:
-				read_byte(ins, faddr, &ins->Acc);
-				nz_flags(ins, ins->Acc);
+				READ_BYTE(vm, t_addr, &vm->A);
+				FLAGS_NZ(vm, vm->A);
 				break;
 			case OP_LDX:
-				read_byte(ins, faddr, &ins->iX);
-				nz_flags(ins, ins->iX);
+				printf("addr:%#4x ", t_addr);
+				READ_BYTE(vm, t_addr, &vm->X);
+				FLAGS_NZ(vm, vm->X);
 				break;
 			case OP_LDY:
-				read_byte(ins, faddr, &ins->iY);
-				nz_flags(ins, ins->iY);
+				READ_BYTE(vm, t_addr, &vm->Y);
+				FLAGS_NZ(vm, vm->Y);
+				break;
+			case OP_LAX:  // Composite
+				READ_BYTE(vm, t_addr, &vm->A);
+				vm->X = vm->A;
+				FLAGS_NZ(vm, vm->A);
+				break;
+
+			case OP_SAX:  // Composite
+				t_byte1 = vm->A & vm->X;
+				WRITE_BYTE(vm, t_addr, t_byte1);
+				break;
+			case OP_STA:
+				WRITE_BYTE(vm, t_addr, vm->A);
+				break;
+			case OP_STX:
+				WRITE_BYTE(vm, t_addr, vm->X);
+				break;
+			case OP_STY:
+				WRITE_BYTE(vm, t_addr, vm->Y);
+				break;
+
+			case OP_TAX:
+				vm->X = vm->A;
+				FLAGS_NZ(vm, vm->A);
+				break;
+			case OP_TAY:
+				vm->Y = vm->A;
+				FLAGS_NZ(vm, vm->A);
+				break;
+			case OP_TSX:
+				vm->X = vm->S;
+				FLAGS_NZ(vm, vm->S);
+				break;
+			case OP_TXA:
+				vm->A = vm->X;
+				FLAGS_NZ(vm, vm->X);
+				break;
+			case OP_TXS:
+				vm->S = vm->X;
+				break;
+			case OP_TYA:
+				vm->A = vm->Y;
+				FLAGS_NZ(vm, vm->Y);
+				break;
+
+			// Stack
+			case OP_PHA:
+				STACK_PSH8(vm, vm->A);
+				break;
+			case OP_PHP:
+				t_byte1 = vm->P | FLAG_BREAK;
+				STACK_PSH8(vm, t_byte1);
+				break;
+
+			case OP_PLA:
+				STACK_POP8(vm, &vm->A);
+				FLAGS_NZ(vm, vm->A);
+				break;
+			case OP_PLP:
+				STACK_POP8(vm, &vm->P);
+				vm->P = (vm->P & ~FLAG_BREAK) | FLAG_RESERVED;
+				break;
+
+			// Decrements / Increments
+			case OP_DEC:
+				READ_BYTE(vm, t_addr, &t_byte1);
+				--t_byte1;
+				WRITE_BYTE(vm, t_addr, t_byte1);
+				FLAGS_NZ(vm, t_byte1);
+				break;
+			case OP_DEX:
+				vm->X--;
+				FLAGS_NZ(vm, vm->X);
+				break;
+			case OP_DEY:
+				vm->Y--;
+				FLAGS_NZ(vm, vm->Y);
+				break;
+
+			case OP_INC:
+				READ_BYTE(vm, t_addr, &t_byte1);
+				++t_byte1;
+				WRITE_BYTE(vm, t_addr, t_byte1);
+				FLAGS_NZ(vm, t_byte1);
+				break;
+			case OP_INX:
+				vm->X++;
+				FLAGS_NZ(vm, vm->X);
+				break;
+			case OP_INY:
+				vm->Y++;
+				FLAGS_NZ(vm, vm->Y);
+				break;
+
+			// Arithmetic
+			case OP_ISC:  // Composite
+				READ_BYTE(vm, t_addr, &t_byte1);
+				++t_byte1;
+				WRITE_BYTE(vm, t_addr, t_byte1);
+				t_byte2 = 1;
+			case OP_SBC:
+				if (!t_byte2)
+					READ_BYTE(vm, t_addr, &t_byte1);
+				t_byte1 = ~t_byte1;
+				t_byte2 = 1;
+			case OP_ADC:
+				if (!t_byte2)
+					READ_BYTE(vm, t_addr, &t_byte1);
+				t_addr = vm->A + t_byte1 + FLAG_GET(vm, FLAG_CARRY);
+				FLAG_UPD(vm, FLAG_CARRY, t_addr > 0xff);
+				FLAG_UPD(vm, FLAG_OVERFLOW, (~(vm->A ^ t_byte1) & (vm->A ^ t_addr)) & 0x80);
+				vm->A = t_addr & 0xff;
+				FLAGS_NZ(vm, vm->A);
+				break;
+
+			// Logical
+			case OP_AND:
+				READ_BYTE(vm, t_addr, &t_byte1);
+				vm->A &= t_byte1;
+				FLAGS_NZ(vm, vm->A);
+				break;
+			case OP_EOR:
+				READ_BYTE(vm, t_addr, &t_byte1);
+				vm->A ^= t_byte1;
+				FLAGS_NZ(vm, vm->A);
+				break;
+			case OP_ORA:
+				READ_BYTE(vm, t_addr, &t_byte1);
+				vm->A |= t_byte1;
+				FLAGS_NZ(vm, vm->A);
+				break;
+
+			// Shift / Rotate
+			case OP_ASL:
+				if (address_mode == ADDRMODE_ACCUM)
+					t_byte1 = vm->A;
+				else
+					READ_BYTE(vm, t_addr, &t_byte1);
+
+				FLAG_UPD(vm, FLAG_CARRY, t_byte1 & 0x80)
+				t_byte1 <<= 1;
+
+				if (address_mode == ADDRMODE_ACCUM)
+					vm->A = t_byte1;
+				else
+					WRITE_BYTE(vm, t_addr, t_byte1);
+
+				FLAGS_NZ(vm, t_byte1);
 				break;
 			case OP_LSR:
-				if (am == MODE_ACC)
-				{
-					b1 = ins->Acc >> 1;
-					b2 = ins->Acc & 0x1;
-					ins->Acc = b1;
-				} else
-				{
-					read_byte(ins, faddr, &b1);
-					b2 = b1 & 0x1;
-					b1 >>= 1;
-					ins->write(ins, faddr, 1, &b1);
-				}
+				if (address_mode == ADDRMODE_ACCUM)
+					t_byte1 = vm->A;
+				else
+					READ_BYTE(vm, t_addr, &t_byte1);
 
-				upd_flag(ins, FLAG_CARRY, b2);
-				nz_flags(ins, b1);
+				FLAG_UPD(vm, FLAG_CARRY, t_byte1 & 1);
+				t_byte1 >>= 1;
+
+				if (address_mode == ADDRMODE_ACCUM)
+					vm->A = t_byte1;
+				else
+					WRITE_BYTE(vm, t_addr, t_byte1);
+
+				FLAGS_NZ(vm, t_byte1);
+				break;
+			case OP_ROL:
+				if (address_mode == ADDRMODE_ACCUM)
+					t_byte1 = vm->A;
+				else
+					READ_BYTE(vm, t_addr, &t_byte1);
+
+				t_byte2 = FLAG_GET(vm, FLAG_CARRY);
+				FLAG_UPD(vm, FLAG_CARRY, t_byte1 & 0x80)
+				t_byte1 <<= 1, t_byte1 += t_byte2 ? 1 : 0;
+
+				if (address_mode == ADDRMODE_ACCUM)
+					vm->A = t_byte1;
+				else
+					WRITE_BYTE(vm, t_addr, t_byte1);
+
+				FLAGS_NZ(vm, t_byte1);
+				break;
+			case OP_ROR:
+				if (address_mode == ADDRMODE_ACCUM)
+					t_byte1 = vm->A;
+				else
+					READ_BYTE(vm, t_addr, &t_byte1);
+
+				t_byte2 = FLAG_GET(vm, FLAG_CARRY);
+				FLAG_UPD(vm, FLAG_CARRY, t_byte1 & 0x1)
+				t_byte1 >>= 1, t_byte1 += t_byte2 ? 0x80 : 0;
+
+				if (address_mode == ADDRMODE_ACCUM)
+					vm->A = t_byte1;
+				else
+					WRITE_BYTE(vm, t_addr, t_byte1);
+
+				FLAGS_NZ(vm, t_byte1);
+				break;
+
+			// Flags
+			case OP_CLC:
+				FLAG_DIS(vm, FLAG_CARRY);
+				break;
+			case OP_CLD:
+				FLAG_DIS(vm, FLAG_DECIMAL);
+				break;
+			case OP_CLI:
+				FLAG_DIS(vm, FLAG_INTDIS);
+				break;
+			case OP_CLV:
+				FLAG_DIS(vm, FLAG_OVERFLOW);
+				break;
+
+			case OP_SEC:
+				FLAG_ENB(vm, FLAG_CARRY);
+				break;
+			case OP_SED:
+				FLAG_ENB(vm, FLAG_DECIMAL);
+				break;
+			case OP_SEI:
+				FLAG_ENB(vm, FLAG_INTDIS);
+				break;
+
+			// Comparisons
+			case OP_DCP:  // Composite
+				READ_BYTE(vm, t_addr, &t_byte1);
+				--t_byte1;
+				WRITE_BYTE(vm, t_addr, t_byte1);
+				t_byte2 = 1;
+			case OP_CMP:
+				if (!t_byte2)
+					READ_BYTE(vm, t_addr, &t_byte1);
+				FLAG_UPD(vm, FLAG_CARRY, vm->A >= t_byte1);
+				FLAGS_NZ(vm, vm->A - t_byte1);
+				break;
+			case OP_CPX:
+				READ_BYTE(vm, t_addr, &t_byte1);
+				FLAG_UPD(vm, FLAG_CARRY, vm->X >= t_byte1);
+				FLAGS_NZ(vm, vm->X - t_byte1);
+				break;
+			case OP_CPY:
+				READ_BYTE(vm, t_addr, &t_byte1);
+				FLAG_UPD(vm, FLAG_CARRY, vm->Y >= t_byte1);
+				FLAGS_NZ(vm, vm->Y - t_byte1);
+				break;
+
+			// Conditional
+			case OP_BCC:
+				if (!FLAG_GET(vm, FLAG_CARRY))
+				{
+					special_timing++;
+					vm->PC = t_addr;
+				}
+				break;
+			case OP_BCS:
+				if (FLAG_GET(vm, FLAG_CARRY))
+				{
+					special_timing++;
+					vm->PC = t_addr;
+				}
+				break;
+			case OP_BEQ:
+				if (FLAG_GET(vm, FLAG_ZERO))
+				{
+					special_timing++;
+					vm->PC = t_addr;
+				}
+				break;
+			case OP_BMI:
+				if (FLAG_GET(vm, FLAG_NEGATIVE))
+				{
+					special_timing++;
+					vm->PC = t_addr;
+				}
+				break;
+			case OP_BNE:
+				if (!FLAG_GET(vm, FLAG_ZERO))
+				{
+					special_timing++;
+					vm->PC = t_addr;
+				}
+				break;
+			case OP_BPL:
+				if (!FLAG_GET(vm, FLAG_NEGATIVE))
+				{
+					special_timing++;
+					vm->PC = t_addr;
+				}
+				break;
+			case OP_BVC:
+				if (!FLAG_GET(vm, FLAG_OVERFLOW))
+				{
+					special_timing++;
+					vm->PC = t_addr;
+				}
+				break;
+			case OP_BVS:
+				if (FLAG_GET(vm, FLAG_OVERFLOW))
+				{
+					special_timing++;
+					vm->PC = t_addr;
+				}
+				break;
+
+			// Jumps / Subroutines
+			case OP_JMP:
+				vm->PC = t_addr;
+				break;
+			case OP_JSR:
+				vm->PC--;
+				STACK_PSH16(vm, vm->PC);
+				vm->PC = t_addr;
+				break;
+			case OP_RTS:
+				STACK_POP16(vm, &vm->PC);
+				++vm->PC;
+				break;
+
+			// Interrupts
+			case OP_BRK:
+				STACK_PSH16(vm, vm->PC);
+				t_byte1 = vm->P | FLAG_BREAK;
+				STACK_PSH8(vm, t_byte1);
+				FLAG_ENB(vm, FLAG_INTDIS);
+				READ_ADDR(vm, BRK_VECTOR, &t_addr);
+				vm->PC = t_addr;
+				break;
+			case OP_RTI:
+				STACK_POP8(vm, &vm->P);
+				vm->P = (vm->P & ~FLAG_BREAK) | FLAG_RESERVED;
+				STACK_POP16(vm, &vm->PC);
+				break;
+
+			// Other
+			case OP_BIT:
+				READ_BYTE(vm, t_addr, &t_byte1);
+				t_byte2 = vm->A & t_byte1;
+				FLAGS_NZ(vm, t_byte2);
+				FLAG_UPD(vm, FLAG_OVERFLOW, t_byte2 & 0x40);
+				vm->P &= 0b00111111;
+				vm->P |= t_byte1 & 0b11000000;
 				break;
 			case OP_NOP:
 				break;
-			case OP_ORA:
-				read_byte(ins, faddr, &b1);
-				ins->Acc |= b1;
-				nz_flags(ins, ins->Acc);
-				break;
-			case OP_PHA:
-				ins->write(ins, 0x100 + ins->Sp--, 1, &ins->Acc);
-				break;
-			case OP_PHP:
-				b1 = ins->status | FLAG_BREAK;
-				ins->write(ins, 0x100 + ins->Sp--, 1, &b1);
-				break;
-			case OP_PLA:
-				read_byte(ins, 0x100 + ++ins->Sp, &ins->Acc);
-				nz_flags(ins, ins->Acc);
-				break;
-			case OP_PLP:
-				read_byte(ins, 0x100 + ++ins->Sp, &ins->status);
-				ins->status ^= (ins->status) & (FLAG_BREAK);
-				ins->status |= FLAG_RESERVED;
-				break;
-			case OP_ROL:
-				if (am == MODE_ACC)
-				{
-					b2 = ins->Acc & 0x80;
-					b1 = ((ins->Acc << 1) & 0xff) + fetch_flag(ins, FLAG_CARRY);
-					ins->Acc = b1;
-				} else
-				{
-					read_byte(ins, faddr, &b1);
-					b2 = b1 & 0x80;
-					b1 = ((b1 << 1) & 0xff) + fetch_flag(ins, FLAG_CARRY);
-					ins->write(ins, faddr, 1, &b1);
-				}
 
-				nz_flags(ins, b1);
-				upd_flag(ins, FLAG_CARRY, b2);
-				break;
-			case OP_ROR:
-				if (am == MODE_ACC)
-				{
-					b2 = ins->Acc & 0x1;
-					b1 = (ins->Acc >> 1) + (fetch_flag(ins, FLAG_CARRY) << 7);
-					ins->Acc = b1;
-				} else
-				{
-					read_byte(ins, faddr, &b1);
-					b2 = b1 & 0x1;
-					b1 = (b1 >> 1) + (fetch_flag(ins, FLAG_CARRY) << 7);
-					ins->write(ins, faddr, 1, &b1);
-				}
-
-				nz_flags(ins, b1);
-				upd_flag(ins, FLAG_CARRY, b2);
-				break;
-			case OP_RTI:
-				st_pop8(ins, &ins->status);
-				ins->status ^= ins->status & FLAG_BREAK;
-				ins->status |= FLAG_RESERVED;
-				st_pop8(ins, &b1); st_pop8(ins, &b2);
-				ins->pc = (b2 << 8) + b1;
-				break;
-			case OP_RTS:
-				st_pop8(ins, &b1); st_pop8(ins, &b2);
-				ins->pc = (b2 << 8) + b1 + 1;
-				break;
-			case OP_SAX:
-				b1 = ins->Acc & ins->iX;
-				ins->write(ins, faddr, 1, &b1);
-				break;
-			case OP_SBC:
-				read_byte(ins, faddr, &b1);
-				b1 = ~b1;
-				faddr = ins->Acc + b1 + fetch_flag(ins, FLAG_CARRY);
-				upd_flag(ins, FLAG_CARRY, faddr > 0xff);
-				upd_flag(ins, FLAG_OVERFLOW, (~(ins->Acc ^ b1) & (ins->Acc ^ faddr) & 0x80));
-				ins->Acc = faddr & 0xff;
-				nz_flags(ins, ins->Acc);
-				break;
-			case OP_SEC:
-				set_flag(ins, FLAG_CARRY);
-				break;
-			case OP_SED:
-				set_flag(ins, FLAG_DECIMAL);
-				break;
-			case OP_SEI:
-				set_flag(ins, FLAG_INTDIS);
-				break;
-			case OP_STA:
-				ins->write(ins, faddr, 1, &ins->Acc);
-				break;
-			case OP_STX:
-				ins->write(ins, faddr, 1, &ins->iX);
-				break;
-			case OP_STY:
-				ins->write(ins, faddr, 1, &ins->iY);
-				break;
-			case OP_TAX:
-				ins->iX = ins->Acc;
-				nz_flags(ins, ins->Acc);
-				break;
-			case OP_TAY:
-				ins->iY = ins->Acc;
-				nz_flags(ins, ins->Acc);
-				break;
-			case OP_TSX:
-				ins->iX = ins->Sp;
-				nz_flags(ins, ins->Sp);
-				break;
-			case OP_TXA:
-				ins->Acc = ins->iX;
-				nz_flags(ins, ins->iX);
-				break;
-			case OP_TXS:
-				ins->Sp = ins->iX;
-				break;
-			case OP_TYA:
-				ins->Acc = ins->iY;
-				nz_flags(ins, ins->iY);
-				break;
 			default:
-				// TODO: Throw error
+				// TODO: throw error
+				vm->H = 1;
 				break;
 		}
 
-		ins->debug_addr = faddr;
-		ins->read(ins, faddr, 1, &ins->ExInterrupt);
-		ins->cc += 1 + tim + (ett >= 2);
-		if (ins->halted) break;
+		READ_BYTE(vm, t_addr, &vm->ex_interrupt);
+		vm->debug_addr = t_addr;
+		vm->cycles += 1 + timing + (special_timing >= 2);
+		if (vm->H) break;
 	}
 
-	return ins->cc;
+	return vm->cycles;
 }

@@ -30,6 +30,11 @@ u16 io_read(VM6502* vm, u16 addr, u16 size, u8* out)
 
 u16 io_write(VM6502* vm, u16 addr, u16 size, u8* input)
 {
+	// printf("requested write for %#4x ... %#4x\n", addr, addr + (size - 1));
+	// for (uint x = 0; x < size; x++)
+	// 	printf("%2x ", input[x]);
+	// printf("\n");
+
 	for (u16 x = 0; x < size; x++)
 	{
 		if (addr + x >= 0x8000 && addr <= 0xBFFF)
@@ -47,7 +52,9 @@ u16 io_write(VM6502* vm, u16 addr, u16 size, u8* input)
 
 signed main()
 {
-	VM6502* vm = VM6502_init((LFRMethod)io_read, (WTRMethod)io_write);
+	VM6502* vm = VM6502_init((VM6502_RamIO){
+		.read=(VM6502_RamIORead)io_read, .write=(VM6502_RamIOWrite)io_write
+	}, NULL);
 
 	Context* ctx = malloc(sizeof(Context));
 	ctx->memory = malloc(sizeof(u8) * (USHRT_MAX + 3));
@@ -89,9 +96,9 @@ signed main()
 	// vm->read(vm, NMI_VECTOR, 2, (u8*)&nmi_vec);
 	// vm->read(vm, BRK_VECTOR, 2, (u8*)&brk_vec);
 
-	vm->pc = 0xC000;
-	vm->Sp = 0xfd;
-	vm->status = 0x24;
+	vm->PC = 0xC000;
+	vm->S = 0xfd;
+	vm->P = 0x24;
 	// vm->read(vm, BRK_VECTOR, 2, (u8*)&vm->pc);
 
 	uint x;
@@ -101,12 +108,13 @@ signed main()
 	{
 		// C000  4C F5 C5  JMP $C5F5                       A:00 X:00 Y:00 P:24 SP:FD PPU:  0, 21 CYC:7
 		u8 data[3];
-		vm->read(vm, vm->pc, min(3, USHRT_MAX - vm->pc + 1), data);
+		vm->read(vm, vm->PC, min(3, USHRT_MAX - vm->PC + 1), data);
 		printf("%4x  %2x %2x %2x  %s                             A:%2x X:%2x Y:%2x P:%2x SP:%2x             CYC: %d ",
-			vm->pc, data[0], data[1], data[2], FROMASM[data[0]], vm->Acc, vm->iX, vm->iY, vm->status, vm->Sp, cc);
-		VM6502_run_eff(vm, 1);
-		printf("%d %#4x\n", vm->ExInterrupt, vm->debug_addr);
-		vm->ExInterrupt = 0;
-		cc += vm->cc;
+			vm->PC, data[0], data[1], data[2], FROMASM[data[0]], vm->A, vm->X, vm->Y, vm->P, vm->S, cc);
+		vm->debug_addr = 0;
+		VM6502_run(vm, 1);
+		printf("%d %#4x\n", vm->ex_interrupt, vm->debug_addr);
+		vm->ex_interrupt = 0;
+		cc += vm->cycles;
 	}
 }

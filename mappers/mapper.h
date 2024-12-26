@@ -6,8 +6,7 @@ typedef struct Mapper {
 	void (*each_cycle)(VM6502*, void*);
 	void* extra;
 
-	LFRMethod read;
-	WTRMethod write;
+	VM6502_RamIO io;
 } Mapper;
 
 typedef char* MapperHeader;

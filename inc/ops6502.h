@@ -107,22 +107,35 @@ static uint16_t JUMPTABLE[0x100] = {
 */
 
 // Non-Indexed, non memory
-#define MODE_ACC  0x0
-#define MODE_IMM  0x1
-#define MODE_IMP  0x2
+#define ADDRMODE_ACCUM	0x0
+#define ADDRMODE_IMMED	0x1
+#define ADDRMODE_IMPLD	0x2
 
 // Non-Indexed memory ops
-#define MODE_REL  0x3
-#define MODE_ABS  0x4
-#define MODE_ZPG  0x5
-#define MODE_IND  0x6
+#define ADDRMODE_RELAT	0x3
+#define ADDRMODE_ABSOL	0x4
+#define ADDRMODE_ZRPAG	0x5
+#define ADDRMODE_INDIR	0x6
 
 // Indexed memory ops
-#define MODE_ABX  0x7
-#define MODE_ABY  0x8
-#define MODE_ZPX  0x9
-#define MODE_ZPY  0xA
-#define MODE_IIX  0xB
-#define MODE_IIY  0xC
+#define ADDRMODE_ABSOX	0x7
+#define ADDRMODE_ABSOY	0x8
+#define ADDRMODE_ZRPAX	0x9
+#define ADDRMODE_ZRPAY	0xA
+#define ADDRMODE_INDIX	0xB
+#define ADDRMODE_INDIY	0xC
+
+#define FLAG_CARRY    0b1
+#define FLAG_ZERO     0b10
+#define FLAG_INTDIS   0b100
+#define FLAG_DECIMAL  0b1000
+#define FLAG_BREAK    0b10000
+#define FLAG_RESERVED 0b100000
+#define FLAG_OVERFLOW 0b1000000
+#define FLAG_NEGATIVE 0b10000000
+
+#define NMI_VECTOR  0xFFFA
+#define RST_VECTOR  0xFFFC
+#define BRK_VECTOR  0xFFFE
 
 #endif
