@@ -125,8 +125,6 @@ impl<T: Memory<T>> VM<T> {
             let address_mode: u8 = ((internal_repr >> 5) & 0b1111) as u8;
             let mut timing: u8 = ((internal_repr >> 2) & 0b111) as u8;
 
-            print!(" {} ", timing);
-
             let mut t_byte1: u8 = 0;
             let t_byte2: u8;
             let mut t_addr: u16;
@@ -217,9 +215,6 @@ impl<T: Memory<T>> VM<T> {
                     t_addr = 0;
                 }
             };
-
-            // print!(" (taddr -> {:2x}) ", self.io.read_byte(t_addr));
-            print!(" {} ", timing);
 
             match internal_opcode {
                 consts::opcode::LDA => {
