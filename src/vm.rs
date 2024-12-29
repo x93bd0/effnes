@@ -1,14 +1,5 @@
+use crate::memory::Memory;
 use crate::consts;
-
-
-/// Memory Bus
-pub trait Memory {
-    fn new() -> Self;
-    fn read_byte(&self, addr: u16) -> u8;
-    fn read_addr(&self, addr: u16) -> u16;
-    fn write_byte(&mut self, addr: u16, data: u8);
-    fn write_addr(&mut self, addr: u16, data: u16);
-}
 
 
 /// 6502 Virtual Machine
@@ -38,6 +29,7 @@ pub struct VM<T: Memory> {
 }
 
 impl<T: Memory> Default for VM<T> {
+    /// Instanciates a new Virtual Machine.
     fn default() -> VM<T> {
         VM {
             pc: 0x8000,
@@ -49,13 +41,12 @@ impl<T: Memory> Default for VM<T> {
             h: 0,
             ex_interrupt: 0,
             cycles: 0,
-            io: T::new(),
+            io: T::default(),
         }
     }
 }
 
 impl<T: Memory> VM<T> {
-    /// Instanciates a new Virtual Machine.
     fn enable_flag(self: &mut VM<T>, flag: consts::Flag) {
         self.p |= flag as u8;
     }
@@ -93,22 +84,22 @@ impl<T: Memory> VM<T> {
         out
     }
 
-    fn stack_push_byte(self: &mut VM<T>, value: u8) {
+    pub fn stack_push_byte(self: &mut VM<T>, value: u8) {
         self.io.write_byte((self.s as u16) | 0x100, value);
         self.s = self.s.wrapping_sub(1);
     }
 
-    fn stack_push_addr(self: &mut VM<T>, value: u16) {
+    pub fn stack_push_addr(self: &mut VM<T>, value: u16) {
         self.stack_push_byte((value >> 8) as u8);
         self.stack_push_byte(value as u8);
     }
 
-    fn stack_pop_byte(self: &mut VM<T>) -> u8 {
+    pub fn stack_pop_byte(self: &mut VM<T>) -> u8 {
         self.s = self.s.wrapping_add(1);
         self.io.read_byte((self.s as u16) | 0x100)
     }
 
-    fn stack_pop_addr(self: &mut VM<T>) -> u16 {
+    pub fn stack_pop_addr(self: &mut VM<T>) -> u16 {
         (self.stack_pop_byte() as u16) + ((self.stack_pop_byte() as u16) << 8)
     }
 
@@ -232,7 +223,8 @@ impl<T: Memory> VM<T> {
     /// using a match statement that runs the desired opcode efficiently.
     ///
     pub fn run(self: &mut VM<T>, cycles: usize) {
-        while self.cycles < cycles && self.ex_interrupt == 0 {
+        let mut t_cycles: usize = 0;
+        while t_cycles < cycles && self.ex_interrupt == 0 {
             let opcode: u8 = self.next_byte();
 
             let internal_repr: u16 = consts::TRANSLATION_TABLE[opcode as usize];
@@ -810,7 +802,9 @@ impl<T: Memory> VM<T> {
                 consts::OpCode::Nop => {}
             }
 
-            self.cycles += 1 + (base_timing as usize) + (if timing > 0 {(timing as usize) - 1} else {0});
+            let cycle_expr: usize = 1 + (base_timing as usize) + (if timing > 0 {(timing as usize) - 1} else {0});
+            self.cycles += cycle_expr;
+            t_cycles += cycle_expr;
         }
     }
 }
