@@ -1,5 +1,5 @@
 use crate::consts;
-use crate::memory::Memory;
+use effnes_bus::Memory;
 
 /// 6502 Virtual Machine
 pub struct VM<T: Memory> {

@@ -1,0 +1,7 @@
+[package]
+name = "efnes-cpu"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+effnes-bus = { path = "../effnes-bus" }
