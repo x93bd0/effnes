@@ -1,11 +1,16 @@
 use std::convert::TryFrom;
 
+/// CPU interrupt vectors.
 pub enum CPUVector {
+    /// Non-Maskable Interrupt
     Nmi = 0xFFFA,
+    /// Reset
     Rst = 0xFFFC,
+    /// Break
     Brk = 0xFFFE,
 }
 
+/// CPU flags.
 pub enum Flag {
     Carry = 0b1,
     Zero = 0b10,
@@ -17,6 +22,7 @@ pub enum Flag {
     Negative = 0b10000000,
 }
 
+/// CPU addressing modes.
 #[repr(u8)]
 #[derive(PartialEq)]
 pub enum AddrMode {
@@ -35,8 +41,8 @@ pub enum AddrMode {
     IndirectY = 0xC,
 }
 
+/// Internal opcodes.
 #[repr(u8)]
-#[derive(PartialEq)]
 pub enum OpCode {
     Adc = 0x1,
     And = 0x2,
@@ -104,6 +110,7 @@ pub enum OpCode {
     Tya = 0x38,
 }
 
+/// The translation table used for converting CPU opcodes into internal codes.
 pub const TRANSLATION_TABLE: [u16; 256] = [
     0b101100101100,
     0b10001110111010,

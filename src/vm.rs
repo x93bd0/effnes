@@ -1,6 +1,5 @@
-use crate::memory::Memory;
 use crate::consts;
-
+use crate::memory::Memory;
 
 /// 6502 Virtual Machine
 pub struct VM<T: Memory> {
@@ -84,21 +83,47 @@ impl<T: Memory> VM<T> {
         out
     }
 
+    /// Pushes a byte into 0x100 .. 0x1FF, depending on the current value of
+    /// the stack pointer. It pushes first, then substracts one from the stack
+    /// pointer.
+    ///
+    /// It supports stack pointer overflow.
+    /// (0x100 - 1 == 0x1FF, in the current implementation)
     pub fn stack_push_byte(self: &mut VM<T>, value: u8) {
         self.io.write_byte((self.s as u16) | 0x100, value);
         self.s = self.s.wrapping_sub(1);
     }
 
+    /// Pushes an address into 0x100 .. 0x1FF, depending on the current value of
+    /// the stack pointer. It pushes first, then substracts two from the stack
+    /// pointer.
+    ///
+    /// It supports stack pointer overflow.
+    /// (0x100 - 1 == 0x1FF, in the current implementation)
     pub fn stack_push_addr(self: &mut VM<T>, value: u16) {
         self.stack_push_byte((value >> 8) as u8);
         self.stack_push_byte(value as u8);
     }
 
+    /// Pops a byte from 0x100 .. 0x1FF, depending on the current value of
+    /// the stack pointer. It adds one to the stack pointer, then returns the
+    /// value of the current stack pointer position.
+    ///
+    /// It supports stack pointer underflow.
+    /// (0x1FF + 1 == 0x100, in the current implementation)
     pub fn stack_pop_byte(self: &mut VM<T>) -> u8 {
         self.s = self.s.wrapping_add(1);
         self.io.read_byte((self.s as u16) | 0x100)
     }
 
+    /// Pops an address from 0x100 .. 0x1FF, depending on the current value of
+    /// the stack pointer. It adds two to the stack pointer, then returns the
+    /// value of the current stack pointer position, shifted by eight to the
+    /// left, plus the value of the previous stack pointer position
+    /// (original_stack_pointer + 1).
+    ///
+    /// It supports stack pointer underflow.
+    /// (0x1FF + 1 == 0x100, in the current implementation)
     pub fn stack_pop_addr(self: &mut VM<T>) -> u16 {
         (self.stack_pop_byte() as u16) + ((self.stack_pop_byte() as u16) << 8)
     }
@@ -114,7 +139,7 @@ impl<T: Memory> VM<T> {
     /// In a cold-reset, the CPU its supposed to set every register with a
     /// known value. This behaviour is the one implemented in this method.
     ///
-    /// However, in a warm reset, the CPU only sets the `consts::Flag::IntDis`,
+    /// However, in a warm reset, the CPU only sets the [consts::Flag::IntDis],
     /// the program counter, and the stack pointer to a known value. This was
     /// also taken into account while implementing it.
     ///
@@ -147,7 +172,7 @@ impl<T: Memory> VM<T> {
     ///
     /// ## Prelude
     ///
-    /// The MOS6502 has 256 available opcodes, as it uses 8-bits for them. But, 
+    /// The MOS6502 has 256 available opcodes, as it uses 8-bits for them. But,
     /// out of those 256, there are only 151 official opcodes, making the other
     /// 101 opcodes illegal. This emulator supports 232 opcodes, leaving only
     /// 24 opcodes unimplemented (temporarily).
@@ -157,7 +182,7 @@ impl<T: Memory> VM<T> {
     ///
     /// ## Why is an "internal representation" being used?
     ///
-    /// As this `Virtual Machine` is targeted to be a cycle accurate one, it 
+    /// As this `Virtual Machine` is targeted to be a cycle accurate one, it
     /// needs to know how many cycles it takes to run every instruction. It
     /// also needs to know which address mode has every instruction.
     ///
@@ -174,7 +199,7 @@ impl<T: Memory> VM<T> {
     ///
     /// ```
     /// 0000000000000000
-    /// ^^^^^^^^    ^^^ 
+    /// ^^^^^^^^    ^^^
     ///  OpCode ^^^^Tim^
     ///         AdMd   E
     /// ```
@@ -255,7 +280,11 @@ impl<T: Memory> VM<T> {
                 consts::AddrMode::Relative => {
                     t_byte1 = self.next_byte();
                     t_addr = self.pc.wrapping_add_signed((t_byte1 as i8) as i16);
-                    t_byte1 = if (t_addr & 0xff00) != (self.pc & 0xff00) {1} else {0};
+                    t_byte1 = if (t_addr & 0xff00) != (self.pc & 0xff00) {
+                        1
+                    } else {
+                        0
+                    };
                 }
 
                 consts::AddrMode::Absolute => {
@@ -659,7 +688,7 @@ impl<T: Memory> VM<T> {
                 }
 
                 consts::OpCode::Cld => {
-                    self.disable_flag(consts::Flag::Decimal);                    
+                    self.disable_flag(consts::Flag::Decimal);
                 }
 
                 consts::OpCode::Cli => {
@@ -682,7 +711,8 @@ impl<T: Memory> VM<T> {
                     self.enable_flag(consts::Flag::IntDis);
                 }
 
-                consts::OpCode::Dcp => {    // Composite
+                consts::OpCode::Dcp => {
+                    // Composite
                     t_byte1 = self.io.read_byte(t_addr).wrapping_sub(1);
                     self.io.write_byte(t_addr, t_byte1);
 
@@ -787,7 +817,8 @@ impl<T: Memory> VM<T> {
                 }
 
                 consts::OpCode::Rti => {
-                    self.p = (self.stack_pop_byte() & !(consts::Flag::Break as u8)) | (consts::Flag::Reserved as u8);
+                    self.p = (self.stack_pop_byte() & !(consts::Flag::Break as u8))
+                        | (consts::Flag::Reserved as u8);
                     self.pc = self.stack_pop_addr();
                 }
 
@@ -802,7 +833,8 @@ impl<T: Memory> VM<T> {
                 consts::OpCode::Nop => {}
             }
 
-            let cycle_expr: usize = 1 + (base_timing as usize) + (if timing > 0 {(timing as usize) - 1} else {0});
+            let cycle_expr: usize =
+                1 + (base_timing as usize) + (if timing > 0 { (timing as usize) - 1 } else { 0 });
             self.cycles += cycle_expr;
             t_cycles += cycle_expr;
         }
