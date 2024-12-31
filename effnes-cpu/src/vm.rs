@@ -128,6 +128,10 @@ impl<T: Memory> VM<T> {
         (self.stack_pop_byte() as u16) + ((self.stack_pop_byte() as u16) << 8)
     }
 
+    pub fn irq(self: &mut VM<T>) {}
+
+    pub fn nmi(self: &mut VM<T>) {}
+
     /// Resets the CPU by putting it into a known state.
     ///
     /// ## Behaviour
@@ -197,7 +201,7 @@ impl<T: Memory> VM<T> {
     ///
     /// ## Internal Representation
     ///
-    /// ```
+    /// ```ignore
     /// 0000000000000000
     /// ^^^^^^^^    ^^^
     ///  OpCode ^^^^Tim^

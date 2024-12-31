@@ -1,4 +1,9 @@
 # "effnes" core
+
+[![Built With][BUILTWITH_BADGE]][BUILTWITH_LINK]
+[![Stargazers][STARS_BADGE]][STARS_LINK]
+[![License][LICENSE_BADGE]][LICENSE_LINK]
+
 The "effnes" project aims to be a core for developing low RAM consuming NES
 emulators. This project provides the tools for helping the developer to only
 worry about the project's UI and, maybe, about the project's RAM optimization
@@ -43,5 +48,13 @@ everything working as intended.
 - [ ] Add unit tests.
 - [ ] Emulate the Picture Processing Unit (PPU).
 - [ ] Emulate the Audio Processing Unit (APU).
+- [ ] "How to build" README section.
 
 [NESTEST_URL]: https://www.qmtpro.com/~nes/misc/nestest.nes
+[BUILTWITH_BADGE]: https://img.shields.io/badge/Built_With-Rust-red?style=for-the-badge&logo=rust&logoColor=white
+[BUILTWITH_LINK]: https://python.org/
+[STARS_BADGE]: https://img.shields.io/github/stars/x93bd0/efnes?style=for-the-badge
+[STARS_LINK]: https://github.com/x93bd0/efnes/stargazers
+[LICENSE_BADGE]: https://img.shields.io/github/license/x93bd0/efnes?style=for-the-badge
+[LICENSE_LINK]: https://github.com/x93bd0/efnes/blob/master/LICENSE.txt
+
