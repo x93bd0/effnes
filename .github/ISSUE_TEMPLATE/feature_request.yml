@@ -24,6 +24,6 @@ body:
     attributes:
       label: Why would this be necessary?
       description: (Optional) Describe the reasons behind your suggestion.
-      placeholdeR: I believe that this its necessary because...
+      placeholder: I believe that this its necessary because...
     validations:
       required: false
