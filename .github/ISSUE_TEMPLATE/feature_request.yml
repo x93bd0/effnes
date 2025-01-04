@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest ideas, new features or enhancements
+labels: [enhancement]
+
+body:
+  - type: checkboxes
+    attributes:
+      label: Checklist
+      options:
+        - label: I believe this feature/suggestion would be benefitial and/or necessary to this project.
+          required: true
+        - label: I have searched for the same request on the issue tracker.
+          required: true
+
+  - type: textarea
+    attributes:
+      label: What's your idea?
+      description: Describe what you want to suggest. Please be specific.
+      placeholder: I think this project needs...
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: Why would this be necessary?
+      description: (Optional) Describe the reasons behind your suggestion.
+      placeholdeR: I believe that this its necessary because...
+    validations:
+      required: false

@@ -1,3 +1,11 @@
+/// Basic implementation of the NESTEST suite for automatically testing the VM.
+///
+/// # Requirements
+/// For this test to work, there needs to be a directory named `res`, with the
+/// following content:
+/// - `res/nestest.nes`: "NESTEST" rom.
+/// - `res/nestest.log`: "NESTEST" execution log.
+///
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Lines, Read, Seek, SeekFrom};
 use std::path::Path;
@@ -5,6 +13,7 @@ use std::path::Path;
 use effnes_bus::Memory;
 use effnes_cpu::vm::VM;
 
+/// Basic memory implementation for testing purposes.
 struct BasicMemory {
     data: Box<[u8]>,
 }
@@ -44,6 +53,7 @@ where
     Ok(BufReader::new(file).lines())
 }
 
+/// Validate a VM run by comparing it to the output from the NESTEST suite.
 fn validate(vm: &VM<BasicMemory>, line: io::Result<String>) {
     let data: String = line.unwrap();
 
@@ -95,21 +105,18 @@ fn validate(vm: &VM<BasicMemory>, line: io::Result<String>) {
 
 #[test]
 fn main() {
-    let break_addr: u16 = 0x2000;
-
     let mut vm: VM<BasicMemory> = Default::default();
-    let mut rom = File::open("res/nestest.nes").unwrap();
+    let mut rom = File::open("res/nestest/nestest.nes").unwrap();
     rom.seek(SeekFrom::Start(16)).unwrap();
     rom.read_exact(&mut vm.io.data[0xC000..0xFFFF]).unwrap();
 
     vm.reset();
     vm.pc = 0xC000;
     vm.p = 0x24;
-    vm.s = 0xff;
+    vm.s = 0xfd;
     vm.cycles = 7;
-    vm.stack_push_addr(break_addr);
 
-    let mut stream: Lines<BufReader<File>> = read_lines("res/nestest.log").unwrap();
+    let mut stream: Lines<BufReader<File>> = read_lines("res/nestest/nestest.log").unwrap();
     while vm.cycles < 1_000_000 {
         let result = match stream.next() {
             Some(result) => result,
