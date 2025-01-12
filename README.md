@@ -43,13 +43,11 @@ everything working as intended.
 -->
 
 # TODO
-- [ ] Define a Project Name.
-- [ ] Divide project into a Cargo workspace (effnes-cpu, effnes-ppu, effnes-apu, effnes-ines, effnes-nes2, effnes-cartridge...).
-- [ ] Add unit tests.
-- [ ] Emulate the Picture Processing Unit (PPU).
-- [ ] Emulate the Audio Processing Unit (APU).
-- [ ] "How to build" README section.
 
+See ["enhancement"][ENHANCEMENTS_URL] labeled issues.
+
+
+[ENHANCEMENTS_URL]: https://github.com/x93bd0/efnes/issues?q=is%3Aopen+is%3Aissue+label%3Aenhancement
 [NESTEST_URL]: https://www.qmtpro.com/~nes/misc/nestest.nes
 [BUILTWITH_BADGE]: https://img.shields.io/badge/Built_With-Rust-red?style=for-the-badge&logo=rust&logoColor=white
 [BUILTWITH_LINK]: https://python.org/

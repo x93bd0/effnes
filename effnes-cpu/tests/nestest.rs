@@ -56,6 +56,7 @@ where
 /// Validate a VM run by comparing it to the output from the NESTEST suite.
 fn validate(vm: &VM<BasicMemory>, line: io::Result<String>) {
     let data: String = line.unwrap();
+    println!("{}", data);
 
     let mut ptr: &str = &data[0..4];
     assert_eq!(
@@ -69,7 +70,7 @@ fn validate(vm: &VM<BasicMemory>, line: io::Result<String>) {
     assert_eq!(
         u8::from_str_radix(&ptr, 16).unwrap(),
         vm.a,
-        "Testing `Accumulator`"
+        "Testing `Accumulator`",
     );
     ptr = &data[55..57];
     assert_eq!(
