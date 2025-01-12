@@ -25,6 +25,8 @@ pub struct VM<T: Memory> {
     pub cycles: usize,
     /// An Input/Output capable Memory Bus.
     pub io: T,
+    // A magic constant involved in highly unstable opcodes.
+    pub magic: u8,
 }
 
 impl<T: Memory> Default for VM<T> {
@@ -41,6 +43,7 @@ impl<T: Memory> Default for VM<T> {
             ex_interrupt: 0,
             cycles: 0,
             io: T::default(),
+            magic: 0xFE,
         }
     }
 }
@@ -253,7 +256,7 @@ impl<T: Memory> VM<T> {
     ///
     pub fn run(self: &mut VM<T>, cycles: usize) {
         let mut t_cycles: usize = 0;
-        while t_cycles < cycles && self.ex_interrupt == 0 {
+        while t_cycles < cycles && self.h == 0 {
             let opcode: u8 = self.next_byte();
 
             let internal_repr: u16 = consts::TRANSLATION_TABLE[opcode as usize];
@@ -765,9 +768,8 @@ impl<T: Memory> VM<T> {
                 }
 
                 consts::OpCode::Ane => {
-                    // TODO
-                    self.h = 1;
-                    break;
+                    self.a &= self.magic & self.x & self.io.read_byte(t_addr);
+                    self.set_nz_flags(self.a);
                 }
 
                 consts::OpCode::Arr => {
@@ -784,11 +786,15 @@ impl<T: Memory> VM<T> {
                     self.set_nz_flags(self.a);
                 }
 
-                consts::OpCode::Las => {
-                    self.s = self.io.read_byte(t_addr) & self.s;
-                    self.a = self.s;
-                    self.x = self.s;
-                    self.set_nz_flags(self.s);
+                // DEC + CMP
+                consts::OpCode::Dcp => {
+                    // DEC code
+                    t_byte1 = self.io.read_byte(t_addr).wrapping_sub(1);
+                    self.io.write_byte(t_addr, t_byte1);
+
+                    // CMP code
+                    self.set_flag(consts::Flag::Carry, self.a >= t_byte1);
+                    self.set_nz_flags(self.a.wrapping_sub(t_byte1));
                 }
 
                 // INC + SBC
@@ -808,6 +814,41 @@ impl<T: Memory> VM<T> {
                         (!(self.a ^ t_byte1) & (self.a ^ (t_addr as u8))) & 0x80 != 0,
                     );
                     self.a = t_addr as u8;
+                    self.set_nz_flags(self.a);
+                }
+
+                consts::OpCode::Las => {
+                    self.s = self.io.read_byte(t_addr) & self.s;
+                    self.a = self.s;
+                    self.x = self.s;
+                    self.set_nz_flags(self.s);
+                }
+
+                // LDA + LDX
+                consts::OpCode::Lax => {
+                    self.a = self.io.read_byte(t_addr);
+                    self.x = self.a;
+                    self.set_nz_flags(self.a);
+                }
+
+                consts::OpCode::Lxa => {
+                    self.a = (self.a | self.magic) & self.io.read_byte(t_addr);
+                    self.x = self.a;
+                    self.set_nz_flags(self.a);
+                }
+
+                // ROL + AND
+                consts::OpCode::Rla => {
+                    // ROL code
+                    t_byte1 = self.io.read_byte(t_addr);
+                    t_byte2 = self.get_flag(consts::Flag::Carry);
+                    self.set_flag(consts::Flag::Carry, t_byte1 & 0x80 != 0);
+                    t_byte1 <<= 1;
+                    t_byte1 = t_byte1.wrapping_add(t_byte2);
+                    self.io.write_byte(t_addr, t_byte1);
+
+                    // AND code
+                    self.a &= t_byte1;
                     self.set_nz_flags(self.a);
                 }
 
@@ -834,19 +875,57 @@ impl<T: Memory> VM<T> {
                     self.set_nz_flags(self.a);
                 }
 
-                // ROL + AND
-                consts::OpCode::Rla => {
-                    // ROL code
-                    t_byte1 = self.io.read_byte(t_addr);
-                    t_byte2 = self.get_flag(consts::Flag::Carry);
-                    self.set_flag(consts::Flag::Carry, t_byte1 & 0x80 != 0);
-                    t_byte1 <<= 1;
-                    t_byte1 = t_byte1.wrapping_add(t_byte2);
-                    self.io.write_byte(t_addr, t_byte1);
+                // S(Accumulator & X register)
+                consts::OpCode::Sax => {
+                    self.io.write_byte(t_addr, self.a & self.x);
+                }
 
-                    // AND code
-                    self.a &= t_byte1;
-                    self.set_nz_flags(self.a);
+                consts::OpCode::Sbx => {
+                    self.x &= self.a;
+
+                    // SBC code
+                    t_byte1 = !self.io.read_byte(t_addr);
+                    t_addr = (self.x as u16)
+                        + (t_byte1 as u16)
+                        + (self.get_flag(consts::Flag::Carry) as u16);
+                    self.set_flag(consts::Flag::Carry, t_addr > 0xFF);
+                    self.set_flag(
+                        consts::Flag::Overflow,
+                        (!(self.x ^ t_byte1) & (self.x ^ (t_addr as u8))) & 0x80 != 0,
+                    );
+                    self.x = t_addr as u8;
+                    self.set_nz_flags(self.x);
+                }
+
+                consts::OpCode::Sha => {
+                    t_byte1 = match address_mode {
+                        // TODO: Only read one bit
+                        consts::AddrMode::AbsoluteY => ((self.io.read_addr(self.pc.wrapping_sub(2))
+                            >> 8) as u8)
+                            .wrapping_add(1),
+                        consts::AddrMode::ZeroPageY => self.io.read_byte(
+                            self.io.read_byte(self.pc.wrapping_sub(1)).wrapping_add(1) as u16,
+                        ),
+                        _ => {
+                            self.h = 1;
+                            break;
+                        }
+                    };
+
+                    self.io.write_byte(t_addr, self.a & self.x & t_byte1);
+                }
+
+                consts::OpCode::Shx | consts::OpCode::Shy => {
+                    // TODO: Only read one byte
+                    self.io.write_byte(
+                        t_addr,
+                        (if opcode == consts::OpCode::Shx as u8 {
+                            self.x
+                        } else {
+                            self.y
+                        }) & ((self.io.read_addr(self.pc.wrapping_sub(2) >> 8) as u8)
+                            .wrapping_add(1)),
+                    );
                 }
 
                 // ASL + ORA
@@ -875,27 +954,19 @@ impl<T: Memory> VM<T> {
                     self.set_nz_flags(self.a);
                 }
 
-                // DEC + CMP
-                consts::OpCode::Dcp => {
-                    // DEC code
-                    t_byte1 = self.io.read_byte(t_addr).wrapping_sub(1);
-                    self.io.write_byte(t_addr, t_byte1);
-
-                    // CMP code
-                    self.set_flag(consts::Flag::Carry, self.a >= t_byte1);
-                    self.set_nz_flags(self.a.wrapping_sub(t_byte1));
+                consts::OpCode::Tas => {
+                    // TODO: Only read one byte
+                    self.s = self.a & self.x;
+                    self.io.write_byte(
+                        t_addr,
+                        self.s
+                            & ((self.io.read_addr(self.pc.wrapping_sub(2)) >> 8) as u8)
+                                .wrapping_add(1),
+                    );
                 }
 
-                // LDA + LDX
-                consts::OpCode::Lax => {
-                    self.a = self.io.read_byte(t_addr);
-                    self.x = self.a;
-                    self.set_nz_flags(self.a);
-                }
-
-                // S(Accumulator & X register)
-                consts::OpCode::Sax => {
-                    self.io.write_byte(t_addr, self.a & self.x);
+                consts::OpCode::Jam => {
+                    self.h = 1;
                 }
             }
 

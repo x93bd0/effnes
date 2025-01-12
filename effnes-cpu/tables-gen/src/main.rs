@@ -34,8 +34,10 @@ fn main() -> io::Result<()> {
         let file = File::open(OPCODES_PATH).unwrap();
         let reader = BufReader::new(file);
         let mut discriminant = 0;
+        let mut index = 0;
 
         for opt_line in reader.lines() {
+            index += 1;
             let mut line = opt_line.unwrap();
             {
                 let mut mnemonic = &mut line[..3];
@@ -69,6 +71,10 @@ fn main() -> io::Result<()> {
                 }
             } as u16;
 
+            assert_eq!(
+                table[uopcode as usize], 0,
+                "Opcode 0x{uopcode:x} is redefined at line {index}",
+            );
             table[uopcode as usize] = (if extra { 1u16 } else { 0u16 })
                 + ((utime - 1) << 1)
                 + ((map[&aliases[mode_abrv]] as u16) << 4)
