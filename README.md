@@ -5,14 +5,14 @@
 [![License][LICENSE_BADGE]][LICENSE_LINK]
 
 The "effnes" project aims to be a core for developing low RAM consuming NES
-emulators. This project provides the tools for helping the developer to only
-worry about the project's UI and, maybe, about the project's RAM optimization
-(only on extreme cases where the implemented RAM optimizations for the
-cartridge mappers are not enough).
+emulators. This project provides the tools for helping developers to only worry
+about the project's UI and, maybe, about the project's RAM optimization (only
+on extreme cases where the implemented RAM optimizations for the cartridge
+mappers are not enough).
 
-As this project is presented in a modular manner, it's easy to only use what's
+As this project is presented in a modular manner, it's easy to use only what's
 needed, making the process less painful, and allowing the developer to
-implement his own methods of emulation.
+implement his own methods of emulation if he wants to.
 
 > [!WARNING]
 > This project is at an early development stage. It should not be used until it
@@ -21,17 +21,14 @@ implement his own methods of emulation.
 # Core Packages
 ## effnes-cpu
 
-Currently, this is the only package that it's already implemented and almost*
-fully usable. It's a memory-efficient implementation of the NES CPU (MOS6502
-without _Decimal_ arithmetic). Also, it features an almost correct cycle
-emulation, and it's emulation behaviour is documented in the code.
+Currently, this is the only package that it's already implemented and fully
+usable. It's a memory-efficient oriented implementation of the NES CPU (MOS6502
+without _Decimal_ arithmetic). Also, it features correct cycle emulation, and
+it's emulation behaviour is documented in the code.
 
-It's tested** against the [nestest][NESTEST_URL] CPU test, passing it with
-everything working as intended.
-
-*: CPU emulation is still missing some illegal opcodes.
-
-**: Will be.
+It's tested against the [nestest][NESTEST_URL] CPU test, passing it with
+everything working as intended. See [this][TESTS_ISSUE] for checking if support
+for other tests has already been added.
 
 <!--
 
@@ -55,4 +52,4 @@ See ["enhancement"][ENHANCEMENTS_URL] labeled issues.
 [STARS_LINK]: https://github.com/x93bd0/efnes/stargazers
 [LICENSE_BADGE]: https://img.shields.io/github/license/x93bd0/efnes?style=for-the-badge
 [LICENSE_LINK]: https://github.com/x93bd0/efnes/blob/master/LICENSE.txt
-
+[TESTS_ISSUE]: https://github.com/x93bd0/effnes/issues/9
