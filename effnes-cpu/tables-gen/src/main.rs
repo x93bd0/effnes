@@ -11,6 +11,7 @@ fn main() -> io::Result<()> {
     let mut map = BTreeMap::<String, usize>::new();
     let mut aliases = BTreeMap::<String, String>::new();
     let mut opcode_map = BTreeMap::<String, usize>::new();
+    let mut mnemonics: Vec<String> = Default::default();
     let mut table: Vec<u16> = vec![0; 256];
 
     {
@@ -65,9 +66,10 @@ fn main() -> io::Result<()> {
             let iopcode = match opcode_map.get(mnemonic) {
                 Some(op) => *op,
                 None => {
-                    discriminant += 1;
                     opcode_map.insert(mnemonic.to_string(), discriminant);
-                    discriminant
+                    mnemonics.push(mnemonic.to_string().to_uppercase());
+                    discriminant += 1;
+                    discriminant - 1
                 }
             } as u16;
 
@@ -159,6 +161,13 @@ fn main() -> io::Result<()> {
     println!("        }}");
     println!("    }}");
     println!("}}");
+
+    println!("");
+    println!("pub const MNEMONICS_TABLE: [&str; {}] = [", mnemonics.len());
+    for mnemonic in mnemonics {
+        println!("    \"{}\",", mnemonic);
+    }
+    println!("];");
 
     Ok(())
 }

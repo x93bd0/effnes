@@ -1,5 +1,6 @@
-use crate::consts;
+use crate::consts::{self, AddrMode};
 use effnes_bus::Memory;
+use std::fmt;
 
 /// 6502 Virtual Machine
 pub struct VM<T: Memory> {
@@ -49,15 +50,15 @@ impl<T: Memory> Default for VM<T> {
 }
 
 impl<T: Memory> VM<T> {
-    fn enable_flag(self: &mut VM<T>, flag: consts::Flag) {
+    fn enable_flag(&mut self, flag: consts::Flag) {
         self.p |= flag as u8;
     }
 
-    fn disable_flag(self: &mut VM<T>, flag: consts::Flag) {
+    fn disable_flag(&mut self, flag: consts::Flag) {
         self.p &= !(flag as u8);
     }
 
-    fn set_flag(self: &mut VM<T>, flag: consts::Flag, value: bool) {
+    fn set_flag(&mut self, flag: consts::Flag, value: bool) {
         if value {
             self.enable_flag(flag);
         } else {
@@ -65,22 +66,22 @@ impl<T: Memory> VM<T> {
         }
     }
 
-    fn get_flag(self: &mut VM<T>, flag: consts::Flag) -> u8 {
+    fn get_flag(&self, flag: consts::Flag) -> u8 {
         self.p & (flag as u8)
     }
 
-    fn set_nz_flags(self: &mut VM<T>, value: u8) {
+    fn set_nz_flags(&mut self, value: u8) {
         self.set_flag(consts::Flag::Negative, value & 0x80 > 0);
         self.set_flag(consts::Flag::Zero, value == 0);
     }
 
-    fn next_byte(self: &mut VM<T>) -> u8 {
+    fn next_byte(&mut self) -> u8 {
         let out: u8 = self.io.read_byte(self.pc);
         self.pc = self.pc.wrapping_add(1);
         out
     }
 
-    fn next_addr(self: &mut VM<T>) -> u16 {
+    fn next_addr(&mut self) -> u16 {
         let out: u16 = self.io.read_addr(self.pc);
         self.pc = self.pc.wrapping_add(2);
         out
@@ -92,7 +93,7 @@ impl<T: Memory> VM<T> {
     ///
     /// It supports stack pointer overflow.
     /// (0x100 - 1 == 0x1FF, in the current implementation)
-    pub fn stack_push_byte(self: &mut VM<T>, value: u8) {
+    pub fn stack_push_byte(&mut self, value: u8) {
         self.io.write_byte((self.s as u16) | 0x100, value);
         self.s = self.s.wrapping_sub(1);
     }
@@ -103,7 +104,7 @@ impl<T: Memory> VM<T> {
     ///
     /// It supports stack pointer overflow.
     /// (0x100 - 1 == 0x1FF, in the current implementation)
-    pub fn stack_push_addr(self: &mut VM<T>, value: u16) {
+    pub fn stack_push_addr(&mut self, value: u16) {
         self.stack_push_byte((value >> 8) as u8);
         self.stack_push_byte(value as u8);
     }
@@ -114,7 +115,7 @@ impl<T: Memory> VM<T> {
     ///
     /// It supports stack pointer underflow.
     /// (0x1FF + 1 == 0x100, in the current implementation)
-    pub fn stack_pop_byte(self: &mut VM<T>) -> u8 {
+    pub fn stack_pop_byte(&mut self) -> u8 {
         self.s = self.s.wrapping_add(1);
         self.io.read_byte((self.s as u16) | 0x100)
     }
@@ -127,13 +128,13 @@ impl<T: Memory> VM<T> {
     ///
     /// It supports stack pointer underflow.
     /// (0x1FF + 1 == 0x100, in the current implementation)
-    pub fn stack_pop_addr(self: &mut VM<T>) -> u16 {
+    pub fn stack_pop_addr(&mut self) -> u16 {
         (self.stack_pop_byte() as u16) + ((self.stack_pop_byte() as u16) << 8)
     }
 
-    pub fn irq(self: &mut VM<T>) {}
+    pub fn irq(&mut self) {}
 
-    pub fn nmi(self: &mut VM<T>) {}
+    pub fn nmi(&mut self) {}
 
     /// Resets the CPU by putting it into a known state.
     ///
@@ -153,12 +154,12 @@ impl<T: Memory> VM<T> {
     /// The internal registers are also reseted by this method, independently
     /// of which type of reset it is.
     ///
-    pub fn reset(self: &mut VM<T>) -> bool {
+    pub fn reset(&mut self) -> bool {
         self.h = 0;
         self.cycles = 0;
         self.ex_interrupt = 0;
 
-        self.pc = self.io.read_addr(consts::CPUVector::Brk as u16);
+        self.pc = self.io.read_addr(consts::CPUVector::Rst as u16);
 
         if self.cycles == 0 {
             self.p = 0x36;
@@ -254,7 +255,7 @@ impl<T: Memory> VM<T> {
     /// This is the most complex piece of the emulator's main code. It works by
     /// using a match statement that runs the desired opcode efficiently.
     ///
-    pub fn run(self: &mut VM<T>, cycles: usize) {
+    pub fn run(&mut self, cycles: usize) {
         let mut t_cycles: usize = 0;
         while t_cycles < cycles && self.h == 0 {
             let opcode: u8 = self.next_byte();
@@ -730,7 +731,7 @@ impl<T: Memory> VM<T> {
 
                 // Interrupts
                 consts::OpCode::Brk => {
-                    self.stack_push_addr(self.pc);
+                    self.stack_push_addr(self.pc.wrapping_add(1));
                     self.stack_push_byte(self.p | (consts::Flag::Break as u8));
                     self.enable_flag(consts::Flag::IntDis);
                     self.pc = self.io.read_addr(consts::CPUVector::Brk as u16);
@@ -773,17 +774,14 @@ impl<T: Memory> VM<T> {
                 }
 
                 consts::OpCode::Arr => {
-                    self.a &= self.io.read_byte(t_addr);
-                    self.a = (self.a >> 1)
-                        + (if self.get_flag(consts::Flag::Carry) != 0 {
-                            0x80
-                        } else {
-                            0
-                        });
-
-                    self.set_flag(consts::Flag::Overflow, self.a & 0x40 != self.a & 0x20);
-                    self.set_flag(consts::Flag::Carry, self.a & 0x40 != 0);
+                    self.a = ((self.a & self.io.read_byte(t_addr)) >> 1)
+                        | ((self.get_flag(consts::Flag::Carry) as u8) << 7);
                     self.set_nz_flags(self.a);
+                    self.set_flag(consts::Flag::Carry, self.a & 0x40 != 0);
+                    self.set_flag(
+                        consts::Flag::Overflow,
+                        (self.a & 0x40) ^ ((self.a & 0x20) << 1) != 0,
+                    );
                 }
 
                 // DEC + CMP
@@ -827,12 +825,6 @@ impl<T: Memory> VM<T> {
                 // LDA + LDX
                 consts::OpCode::Lax => {
                     self.a = self.io.read_byte(t_addr);
-                    self.x = self.a;
-                    self.set_nz_flags(self.a);
-                }
-
-                consts::OpCode::Lxa => {
-                    self.a = (self.a | self.magic) & self.io.read_byte(t_addr);
                     self.x = self.a;
                     self.set_nz_flags(self.a);
                 }
@@ -882,17 +874,8 @@ impl<T: Memory> VM<T> {
 
                 consts::OpCode::Sbx => {
                     self.x &= self.a;
-
-                    // SBC code
-                    t_byte1 = !self.io.read_byte(t_addr);
-                    t_addr = (self.x as u16)
-                        + (t_byte1 as u16)
-                        + (self.get_flag(consts::Flag::Carry) as u16);
-                    self.set_flag(consts::Flag::Carry, t_addr > 0xFF);
-                    self.set_flag(
-                        consts::Flag::Overflow,
-                        (!(self.x ^ t_byte1) & (self.x ^ (t_addr as u8))) & 0x80 != 0,
-                    );
+                    t_addr = (self.x as u16).wrapping_sub(self.io.read_byte(t_addr) as u16);
+                    self.set_flag(consts::Flag::Carry, t_addr < 0x100);
                     self.x = t_addr as u8;
                     self.set_nz_flags(self.x);
                 }
@@ -917,15 +900,19 @@ impl<T: Memory> VM<T> {
 
                 consts::OpCode::Shx | consts::OpCode::Shy => {
                     // TODO: Only read one byte
-                    self.io.write_byte(
-                        t_addr,
-                        (if opcode == consts::OpCode::Shx as u8 {
+                    t_byte2 = self.io.read_byte(self.pc.wrapping_sub(1));
+                    t_byte1 = t_byte2.wrapping_add(1)
+                        & (if raw_internal_opcode == (consts::OpCode::Shx as u8) {
                             self.x
                         } else {
                             self.y
-                        }) & ((self.io.read_addr(self.pc.wrapping_sub(2) >> 8) as u8)
-                            .wrapping_add(1)),
-                    );
+                        });
+
+                    if t_byte2 != ((t_addr >> 8) as u8) {
+                        t_addr = (t_addr & 0xff) | ((t_byte1 as u16) << 8).wrapping_add(1);
+                    }
+
+                    self.io.write_byte(t_addr, t_byte1);
                 }
 
                 // ASL + ORA
@@ -975,5 +962,84 @@ impl<T: Memory> VM<T> {
             self.cycles += cycle_expr;
             t_cycles += cycle_expr;
         }
+    }
+}
+
+impl<T: Memory> fmt::Display for VM<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        // AB CD EF `MNE args`
+
+        let opcode = self.io.read_byte(self.pc);
+        let internal_repr: u16 = consts::TRANSLATION_TABLE[opcode as usize];
+        let raw_internal_opcode: u8 = (internal_repr >> 8) as u8;
+        let raw_address_mode: u8 = ((internal_repr >> 4) & 0b1111) as u8;
+
+        write!(f, "VM[{:2x}", opcode)?;
+
+        let address_mode = match consts::AddrMode::try_from(raw_address_mode) {
+            Ok(result) => result,
+            Err(_) => {
+                write!(f, ", INVALID_ADDR_MODE]")?;
+                return Ok(());
+            }
+        };
+
+        let print;
+        let length;
+        let pc = self.pc.wrapping_add(1);
+
+        (print, length) = match address_mode {
+            consts::AddrMode::Immediate => (format!("#${:02x}", self.io.read_byte(pc)), 1),
+            consts::AddrMode::Relative => (
+                format!(
+                    "${:04x}",
+                    self.pc
+                        .wrapping_add(2)
+                        .wrapping_add_signed((self.io.read_byte(pc) as i8) as i16)
+                ),
+                1,
+            ),
+
+            consts::AddrMode::Absolute => (format!("${:04x}", self.io.read_addr(pc)), 2),
+
+            consts::AddrMode::Indirect => (format!("(${:04x})", self.io.read_addr(pc)), 2),
+            consts::AddrMode::ZeroPage => (format!("${:02x}", self.io.read_byte(pc)), 1),
+            consts::AddrMode::ZeroPageX => (format!("${:02x},X", self.io.read_byte(pc)), 1),
+            consts::AddrMode::ZeroPageY => (format!("${:02x},Y", self.io.read_byte(pc)), 1),
+            consts::AddrMode::AbsoluteX => (format!("${:04x},X", self.io.read_addr(pc)), 2),
+            consts::AddrMode::AbsoluteY => (format!("${:04x},Y", self.io.read_addr(pc)), 2),
+            consts::AddrMode::IndirectX => (format!("(${:02x},X)", self.io.read_addr(pc)), 1),
+            consts::AddrMode::IndirectY => (format!("(${:02x}),Y", self.io.read_addr(pc)), 1),
+            consts::AddrMode::Accumulator => ("A".to_string(), 0),
+            consts::AddrMode::Implied => ("".to_string(), 0),
+        };
+
+        for x in 0..length {
+            write!(f, " {:2x}", self.io.read_byte(pc.wrapping_add(x)))?;
+        }
+
+        for _ in length..2 {
+            write!(f, "   ")?;
+        }
+
+        write!(
+            f,
+            " | {} {}",
+            consts::MNEMONICS_TABLE[raw_internal_opcode as usize],
+            print
+        )?;
+
+        for _ in (4 + print.len())..14 {
+            write!(f, " ")?;
+        }
+
+        write!(
+            f,
+            "| A:{:02x} X:{:02x} Y:{:02x} S:{:02x} P:{:02x}] | PC:{:04x} CYC:{}",
+            self.a, self.x, self.y, self.s, self.p, self.pc, self.cycles
+        )?;
+
+        // TODO: Address Inspection
+        Ok(())
     }
 }
