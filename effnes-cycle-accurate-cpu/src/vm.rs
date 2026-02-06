@@ -229,6 +229,7 @@ impl<T: MemoryBus> VM<T> {
             }
 
             State::Process => {
+                // TODO: Don't read address on store operations
                 match self.addr_mode {
                     AddressingMode::Implied => (),
                     _ => self.operand = self.io.read_byte(self.address),
@@ -246,6 +247,15 @@ impl<T: MemoryBus> VM<T> {
                     }
                     Ldy => {
                         self.r_iy = self.operand;
+                    }
+                    Sta => {
+                        self.io.write_byte(self.address, self.r_ac);
+                    }
+                    Stx => {
+                        self.io.write_byte(self.address, self.r_ix);
+                    }
+                    Sty => {
+                        self.io.write_byte(self.address, self.r_iy);
                     }
                     Nop => {}
                     _ => todo!(),
@@ -281,7 +291,6 @@ mod tests {
     const LDA_INY: u8 = 0xB1;
     const LDX_ZPY: u8 = 0xB6;
     const JAM: u8 = 0x02;
-    const MAGIC: u8 = 0xFA;
 
     #[derive(Default)]
     struct Status {
@@ -396,7 +405,7 @@ mod tests {
         };
     }
 
-    fn assert_next_instr_is_nop(mut vm: VM<BasicMemory>, mut st: Status) {
+    fn assert_next_instr_is_nop(vm: &mut VM<BasicMemory>, st: &mut Status) {
         let pc = vm.r_pc.wrapping_add(1);
         assert_execution_eq!(vm, st, {
             (cycle {
@@ -415,205 +424,237 @@ mod tests {
 
     #[test]
     fn test_imm_addressing() {
-        let mut vm = get_vm();
-        let mut st = Status::default();
-        setup_memory!(vm {
-            vm.r_pc.wrapping_add(1) => LDA_IMM,
-            vm.r_pc.wrapping_add(2) => MAGIC,
-            vm.r_pc.wrapping_add(3) => NOP_IMP
-        });
+        for data in 0..=255 {
+            let mut vm = get_vm();
+            let mut st = Status::default();
+            setup_memory!(vm {
+                vm.r_pc.wrapping_add(1) => LDA_IMM,
+                vm.r_pc.wrapping_add(2) => data,
+                vm.r_pc.wrapping_add(3) => NOP_IMP
+            });
 
-        let pc = vm.r_pc.wrapping_add(1);
-        assert_execution_eq!(vm, st, {
-            (cycle {
-                t => 0,
-                pc => pc + 1,
-                ab => pc + 1,
-                op => LDA_IMM,
-                am => AddressingMode::Immediate,
-                st => State::Process
-            }) (=)
+            let pc = vm.r_pc.wrapping_add(1);
+            assert_execution_eq!(vm, st, {
+                (cycle {
+                    t => 0,
+                    pc => pc + 1,
+                    ab => pc + 1,
+                    op => LDA_IMM,
+                    am => AddressingMode::Immediate,
+                    st => State::Process
+                }) (=)
 
-            (cycle {
-                ac => MAGIC,
-                st => State::FetchOpCode
-            }) (=)
-        });
+                (cycle {
+                    ac => data,
+                    st => State::FetchOpCode
+                }) (=)
+            });
 
-        assert_next_instr_is_nop(vm, st);
+            assert_next_instr_is_nop(&mut vm, &mut st);
+        }
     }
 
     #[test]
     fn test_zp_addressing() {
-        let mut vm = get_vm();
-        let mut st = Status::default();
-        setup_memory!(vm {
-            vm.r_pc.wrapping_add(1) => LDA_ZPG,
-            vm.r_pc.wrapping_add(2) => MAGIC,
-            vm.r_pc.wrapping_add(3) => NOP_IMP,
-            MAGIC as u16 => MAGIC ^ 0xFF
-        });
+        for data in 0..=255 {
+            let mut vm = get_vm();
+            let mut st = Status::default();
+            setup_memory!(vm {
+                vm.r_pc.wrapping_add(1) => LDA_ZPG,
+                    vm.r_pc.wrapping_add(2) => data,
+                vm.r_pc.wrapping_add(3) => NOP_IMP,
+                data as u16 => data ^ 0xFF
+            });
 
-        let pc = vm.r_pc.wrapping_add(1);
-        assert_execution_eq!(vm, st, {
-            (cycle {
-                t => 0,
-                pc => pc + 1,
-                op => LDA_ZPG,
-                am => AddressingMode::ZeroPage,
-                st => State::ResolveAddress(AddressResolverState::FetchOperand)
-            }) (=)
+            let pc = vm.r_pc.wrapping_add(1);
+            assert_execution_eq!(vm, st, {
+                (cycle {
+                    t => 0,
+                    pc => pc + 1,
+                    op => LDA_ZPG,
+                    am => AddressingMode::ZeroPage,
+                    st => State::ResolveAddress(AddressResolverState::FetchOperand)
+                }) (=)
 
-            (cycle {
-                st => State::Process,
-                ab => MAGIC as u16,
-            }) (=)
+                (cycle {
+                    st => State::Process,
+                    ab => data as u16,
+                }) (=)
 
-            (cycle {
-                st => State::FetchOpCode,
-                ac => MAGIC ^ 0xFF
-            }) (=)
-        });
+                (cycle {
+                    st => State::FetchOpCode,
+                    ac => data ^ 0xFF
+                }) (=)
+            });
 
-        assert_next_instr_is_nop(vm, st);
+            assert_next_instr_is_nop(&mut vm, &mut st);
+        }
     }
 
     #[test]
     fn test_zpx_addressing() {
         let mut vm = get_vm();
-        let mut st = Status::default();
-        let pc = vm.r_pc.wrapping_add(1);
-        setup_memory!(vm {
-            pc => LDA_ZPX,
-            pc.wrapping_add(1) => MAGIC ^ 0xFF,
-            pc.wrapping_add(2) => NOP_IMP,
-            (MAGIC ^ 0xFF).wrapping_add(MAGIC) as u16 => MAGIC ^ 0xFF
-        } [r_ix => MAGIC]);
+        for zpaddr in 0..255 {
+            for index in 0..255 {
+                let mut st = Status::default();
+                let pc = vm.r_pc.wrapping_add(1);
+                let data = zpaddr;
 
-        use AddressResolverState::*;
-        assert_execution_eq!(vm, st, {
-            (cycle {
-                t  => 0,
-                pc => pc + 1,
-                op => LDA_ZPX,
-                am => AddressingMode::ZeroPageI(IndexRegister::X),
-                st => State::ResolveAddress(FetchOperand),
-            }) (=)
+                setup_memory!(vm {
+                    pc => LDA_ZPX,
+                    pc.wrapping_add(1) => zpaddr,
+                    pc.wrapping_add(2) => NOP_IMP,
+                    zpaddr.wrapping_add(index) as u16 => data
+                } [r_ix => index]);
 
-            (cycle {
-                st => State::ResolveAddress(IndZPDummyRead),
-                ab => (MAGIC ^ 0xFF) as u16,
-            }) (=)
+                use AddressResolverState::*;
+                assert_execution_eq!(vm, st, {
+                    (cycle {
+                        t  => 0,
+                        pc => pc.wrapping_add(1),
+                        op => LDA_ZPX,
+                        am => AddressingMode::ZeroPageI(IndexRegister::X),
+                        st => State::ResolveAddress(FetchOperand),
+                    }) (=)
 
-            (cycle {
-                st => State::ResolveAddress(ZeroPageAddIndexRegister),
-            }) (=)
+                    (cycle {
+                        st => State::ResolveAddress(IndZPDummyRead),
+                        ab => zpaddr.into(),
+                    }) (=)
 
-            (cycle {
-                st => State::Process,
-                ab => (MAGIC ^ 0xFF)
-                    .wrapping_add(MAGIC) as u16,
-            }) (=)
+                    (cycle {
+                        st => State::ResolveAddress(ZeroPageAddIndexRegister),
+                    }) (=)
 
-            (cycle {
-                st => State::FetchOpCode,
-                ac => MAGIC ^ 0xFF,
-            }) (=)
-        });
+                    (cycle {
+                        st => State::Process,
+                        ab => zpaddr
+                            .wrapping_add(index) as u16,
+                    }) (=)
 
-        assert_next_instr_is_nop(vm, st);
+                    (cycle {
+                        st => State::FetchOpCode,
+                        ac => data,
+                    }) (=)
+                });
+
+                assert_next_instr_is_nop(&mut vm, &mut st);
+                setup_memory!(vm {
+                    pc => JAM,
+                    pc.wrapping_add(1) => JAM,
+                    pc.wrapping_add(2) => JAM,
+                    zpaddr.wrapping_add(index) as u16 => JAM
+                } [r_ix => 0, r_pc => 0xF000]);
+            }
+        }
     }
 
     #[test]
     fn test_zpy_addressing() {
         let mut vm = get_vm();
-        let mut st = Status::default();
-        let pc = vm.r_pc.wrapping_add(1);
-        setup_memory!(vm {
-            pc => LDX_ZPY,
-            pc.wrapping_add(1) => MAGIC ^ 0xFF,
-            pc.wrapping_add(2) => NOP_IMP,
-            (MAGIC ^ 0xFF).wrapping_add(MAGIC) as u16 => MAGIC ^ 0xFF
-        } [r_iy => MAGIC]);
+        for zpaddr in 0..255 {
+            for index in 0..255 {
+                let mut st = Status::default();
+                let pc = vm.r_pc.wrapping_add(1);
+                let data = zpaddr;
 
-        use AddressResolverState::*;
-        assert_execution_eq!(vm, st, {
-            (cycle {
-                t => 0,
-                pc => pc + 1,
-                op => LDX_ZPY,
-                am => AddressingMode::ZeroPageI(IndexRegister::Y),
-                st => State::ResolveAddress(FetchOperand)
-            }) (=)
+                setup_memory!(vm {
+                    pc => LDX_ZPY,
+                    pc.wrapping_add(1) => zpaddr,
+                    pc.wrapping_add(2) => NOP_IMP,
+                    zpaddr.wrapping_add(index) as u16 => data
+                } [r_iy => index]);
 
-            (cycle {
-                st => State::ResolveAddress(IndZPDummyRead),
-                ab => (MAGIC ^ 0xFF) as u16
-            }) (=)
+                use AddressResolverState::*;
+                assert_execution_eq!(vm, st, {
+                    (cycle {
+                        t => 0,
+                        pc => pc + 1,
+                        op => LDX_ZPY,
+                        am => AddressingMode::ZeroPageI(IndexRegister::Y),
+                        st => State::ResolveAddress(FetchOperand)
+                    }) (=)
 
-            (cycle {
-                st => State::ResolveAddress(ZeroPageAddIndexRegister)
-            }) (=)
+                    (cycle {
+                        st => State::ResolveAddress(IndZPDummyRead),
+                        ab => zpaddr.into()
+                    }) (=)
 
-            (cycle {
-                st => State::Process,
-                ab => (MAGIC ^ 0xFF)
-                    .wrapping_add(MAGIC) as u16
-            }) (=)
+                    (cycle {
+                        st => State::ResolveAddress(ZeroPageAddIndexRegister)
+                    }) (=)
 
-            (cycle {
-                st => State::FetchOpCode,
-                ix => MAGIC ^ 0xFF
-            }) (=)
-        });
+                    (cycle {
+                        st => State::Process,
+                        ab => zpaddr
+                            .wrapping_add(index) as u16
+                    }) (=)
 
-        assert_next_instr_is_nop(vm, st);
+                    (cycle {
+                        st => State::FetchOpCode,
+                        ix => zpaddr
+                    }) (=)
+                });
+
+                assert_next_instr_is_nop(&mut vm, &mut st);
+                setup_memory!(vm {
+                    pc => JAM,
+                    pc.wrapping_add(1) => JAM,
+                    pc.wrapping_add(2) => JAM,
+                    zpaddr.wrapping_add(index) as u16 => JAM
+                } [r_iy => 0, r_pc => 0xF000]);
+            }
+        }
     }
+
+    const MAGIC: u8 = 0xF0;
 
     #[test]
     fn test_abs_addressing() {
         let mut vm = get_vm();
-        let mut st = Status::default();
+        for lpaddr in 0..=512 {
+            let mut st = Status::default();
 
-        let pc = vm.r_pc.wrapping_add(1);
-        let opcode = LDA_ABS;
-        let addr = (((MAGIC ^ 0xFF) as u16) << 8) + (MAGIC as u16);
+            let pc = vm.r_pc.wrapping_add(1);
+            let opcode = LDA_ABS;
+            let addr = (0xFF00_u16).wrapping_add(lpaddr);
 
-        setup_memory!(vm {
-            pc => opcode,
-            pc.wrapping_add(1) => (addr & 0x00FF) as u8,
-            pc.wrapping_add(2) => ((addr & 0xFF00) >> 8) as u8,
-            pc.wrapping_add(3) => NOP_IMP,
-            addr => MAGIC ^ 0xF0
-        });
+            setup_memory!(vm {
+                pc => opcode,
+                pc.wrapping_add(1) => (addr & 0x00FF) as u8,
+                pc.wrapping_add(2) => ((addr & 0xFF00) >> 8) as u8,
+                pc.wrapping_add(3) => NOP_IMP,
+                addr => lpaddr as u8
+            });
 
-        use AddressResolverState::*;
-        assert_execution_eq!(vm, st, {
-            (cycle {
-                t => 0,
-                pc => pc + 1,
-                op => opcode,
-                am => AddressingMode::Absolute,
-                st => State::ResolveAddress(FetchAddress { high_nybble: false })
-            }) (=)
+            use AddressResolverState::*;
+            assert_execution_eq!(vm, st, {
+                (cycle {
+                    t => 0,
+                    pc => pc + 1,
+                    op => opcode,
+                    am => AddressingMode::Absolute,
+                    st => State::ResolveAddress(FetchAddress { high_nybble: false })
+                }) (=)
 
-            (cycle {
-                pc => pc + 2,
-                st => State::ResolveAddress(FetchAddress { high_nybble: true }),
-                ab => addr & 0x00FF
-            }) (=)
+                (cycle {
+                    pc => pc + 2,
+                    st => State::ResolveAddress(FetchAddress { high_nybble: true }),
+                    ab => addr & 0x00FF
+                }) (=)
 
-            (cycle {
-                st => State::Process,
-                ab => addr
-            }) (=)
+                (cycle {
+                    st => State::Process,
+                    ab => addr
+                }) (=)
 
-            (cycle {
-                st => State::FetchOpCode,
-                ac => MAGIC ^ 0xF0
-            }) (=)
-        });
+                (cycle {
+                    st => State::FetchOpCode,
+                    ac => lpaddr as u8
+                }) (=)
+            });
 
-        assert_next_instr_is_nop(vm, st);
+            assert_next_instr_is_nop(&mut vm, &mut st);
+        }
     }
 }
