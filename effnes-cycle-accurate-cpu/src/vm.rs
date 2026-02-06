@@ -89,182 +89,192 @@ impl<T: MemoryBus> VM<T> {
 
     pub fn cycle(&mut self) {
         self.i_tm += 1;
-        self.next_state = match &self.next_state {
-            State::FetchOpCode => {
-                self.i_tm = 0;
-                self.r_pc = self.r_pc.wrapping_add(1);
-                self.execute = self.next_byte();
-                self.addr_mode = self.execute.into();
+        self.next_state = 'new_state_match: {
+            match &self.next_state {
+                State::Halt => State::Halt,
 
-                match self.addr_mode {
-                    AddressingMode::Implied => State::Process,
-                    AddressingMode::Immediate => {
-                        self.address = self.r_pc;
-                        State::Process
-                    }
-                    AddressingMode::ZeroPage
-                    | AddressingMode::ZeroPageI(_)
-                    | AddressingMode::IndirectI(_) => {
-                        State::ResolveAddress(AddressResolverState::FetchOperand)
-                    }
-                    _ => State::ResolveAddress(AddressResolverState::FetchAddress {
-                        high_nybble: false,
-                    }),
-                }
-            }
+                State::FetchOpCode => {
+                    self.i_tm = 0;
+                    self.r_pc = self.r_pc.wrapping_add(1);
+                    self.execute = self.next_byte();
+                    self.addr_mode = self.execute.into();
 
-            State::ResolveAddress(ads) => {
-                use AddressResolverState::*;
-
-                match ads {
-                    FetchOperand => {
-                        self.operand = self.io.read_byte(self.r_pc);
-                        self.address = self.operand as u16;
-                        match &self.addr_mode {
-                            AddressingMode::ZeroPage => State::Process,
-                            AddressingMode::ZeroPageI(_) => State::ResolveAddress(IndZPDummyRead),
-                            AddressingMode::IndirectI(ir) => {
-                                State::ResolveAddress(if *ir == IndexRegister::X {
-                                    IndXDummyRead
-                                } else {
-                                    FetchZeroPageAddress { high_nybble: false }
-                                })
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-
-                    FetchAddress { high_nybble } => {
-                        if !high_nybble {
-                            self.address = self.next_byte() as u16;
-                            State::ResolveAddress(FetchAddress { high_nybble: true })
-                        } else {
-                            self.address += (self.io.read_byte(self.r_pc) as u16) << 8;
-                            match &self.addr_mode {
-                                AddressingMode::AbsoluteI(ir) => {
-                                    State::ResolveAddress(AddIndexRegister {
-                                        index_register: *ir,
-                                        bump_page: false,
-                                    })
-                                }
-                                _ => State::Process,
-                            }
-                        }
-                    }
-
-                    IndXDummyRead => {
-                        self.io.read_byte(self.operand as u16);
-                        self.operand = self.operand.wrapping_add(self.r_ix);
-                        State::ResolveAddress(FetchZeroPageAddress { high_nybble: false })
-                    }
-
-                    IndZPDummyRead => {
-                        self.io.read_byte(self.address);
-                        State::ResolveAddress(ZeroPageAddIndexRegister)
-                    }
-
-                    FetchZeroPageAddress { high_nybble } => {
-                        if !high_nybble {
-                            self.address = self.io.read_byte(self.operand as u16) as u16;
-                            self.operand = self.operand.wrapping_add(1);
-                            State::ResolveAddress(FetchZeroPageAddress { high_nybble: true })
-                        } else {
-                            self.address += (self.io.read_byte(self.operand as u16) as u16) << 8;
-                            match self.addr_mode {
-                                AddressingMode::IndirectI(IndexRegister::Y) => {
-                                    State::ResolveAddress(AddIndexRegister {
-                                        index_register: IndexRegister::Y,
-                                        bump_page: false,
-                                    })
-                                }
-                                _ => State::Process,
-                            }
-                        }
-                    }
-
-                    AddIndexRegister {
-                        index_register,
-                        bump_page,
-                    } => {
-                        if *bump_page {
-                            self.address = self.address.wrapping_add(0x0100);
+                    match self.addr_mode {
+                        AddressingMode::Implied => State::Process,
+                        AddressingMode::Immediate => {
+                            self.address = self.r_pc;
                             State::Process
-                        } else {
-                            let low_nybble = (self.address as u8).wrapping_add(
-                                if *index_register == IndexRegister::X {
+                        }
+                        AddressingMode::ZeroPage
+                        | AddressingMode::ZeroPageI(_)
+                        | AddressingMode::IndirectI(_) => {
+                            State::ResolveAddress(AddressResolverState::FetchOperand)
+                        }
+                        _ => State::ResolveAddress(AddressResolverState::FetchAddress {
+                            high_nybble: false,
+                        }),
+                    }
+                }
+
+                State::ResolveAddress(ads) => {
+                    use AddressResolverState::*;
+
+                    match ads {
+                        FetchOperand => {
+                            self.operand = self.io.read_byte(self.r_pc);
+                            self.address = self.operand as u16;
+                            match &self.addr_mode {
+                                AddressingMode::ZeroPage => State::Process,
+                                AddressingMode::ZeroPageI(_) => {
+                                    State::ResolveAddress(IndZPDummyRead)
+                                }
+                                AddressingMode::IndirectI(ir) => {
+                                    State::ResolveAddress(if *ir == IndexRegister::X {
+                                        IndXDummyRead
+                                    } else {
+                                        FetchZeroPageAddress { high_nybble: false }
+                                    })
+                                }
+                                _ => unreachable!(),
+                            }
+                        }
+
+                        FetchAddress { high_nybble } => {
+                            if !high_nybble {
+                                self.address = self.next_byte() as u16;
+                                State::ResolveAddress(FetchAddress { high_nybble: true })
+                            } else {
+                                self.address += (self.io.read_byte(self.r_pc) as u16) << 8;
+                                match &self.addr_mode {
+                                    AddressingMode::AbsoluteI(ir) => {
+                                        State::ResolveAddress(AddIndexRegister {
+                                            index_register: *ir,
+                                            bump_page: false,
+                                        })
+                                    }
+                                    _ => State::Process,
+                                }
+                            }
+                        }
+
+                        IndXDummyRead => {
+                            self.io.read_byte(self.operand as u16);
+                            self.operand = self.operand.wrapping_add(self.r_ix);
+                            State::ResolveAddress(FetchZeroPageAddress { high_nybble: false })
+                        }
+
+                        IndZPDummyRead => {
+                            self.io.read_byte(self.address);
+                            State::ResolveAddress(ZeroPageAddIndexRegister)
+                        }
+
+                        FetchZeroPageAddress { high_nybble } => {
+                            if !high_nybble {
+                                self.address = self.io.read_byte(self.operand as u16) as u16;
+                                self.operand = self.operand.wrapping_add(1);
+                                State::ResolveAddress(FetchZeroPageAddress { high_nybble: true })
+                            } else {
+                                self.address +=
+                                    (self.io.read_byte(self.operand as u16) as u16) << 8;
+                                match self.addr_mode {
+                                    AddressingMode::IndirectI(IndexRegister::Y) => {
+                                        State::ResolveAddress(AddIndexRegister {
+                                            index_register: IndexRegister::Y,
+                                            bump_page: false,
+                                        })
+                                    }
+                                    _ => State::Process,
+                                }
+                            }
+                        }
+
+                        AddIndexRegister {
+                            index_register,
+                            bump_page,
+                        } => {
+                            if *bump_page {
+                                self.address = self.address.wrapping_add(0x0100);
+                                State::Process
+                            } else {
+                                let index = if *index_register == IndexRegister::X {
                                     self.r_ix
                                 } else {
                                     self.r_iy
-                                },
-                            );
-                            if low_nybble < self.r_iy {
-                                self.address = (self.address & 0xFF00) + low_nybble as u16;
-                                self.io.read_byte(self.address);
-                                State::ResolveAddress(AddIndexRegister {
-                                    index_register: *index_register,
-                                    bump_page: true,
-                                })
-                            } else {
-                                self.address += self.r_iy as u16;
-                                State::Process
+                                };
+                                let low_nybble = (self.address as u8).wrapping_add(index);
+                                if low_nybble < index {
+                                    self.address = (self.address & 0xFF00) + low_nybble as u16;
+                                    self.io.read_byte(self.address);
+                                    State::ResolveAddress(AddIndexRegister {
+                                        index_register: *index_register,
+                                        bump_page: true,
+                                    })
+                                } else {
+                                    self.address += index as u16;
+                                    State::Process
+                                }
                             }
                         }
-                    }
 
-                    ZeroPageAddIndexRegister => {
-                        if let AddressingMode::ZeroPageI(ir) = self.addr_mode {
-                            self.operand = self.operand.wrapping_add(if ir == IndexRegister::X {
-                                self.r_ix
+                        ZeroPageAddIndexRegister => {
+                            if let AddressingMode::ZeroPageI(ir) = self.addr_mode {
+                                self.operand =
+                                    self.operand.wrapping_add(if ir == IndexRegister::X {
+                                        self.r_ix
+                                    } else {
+                                        self.r_iy
+                                    });
                             } else {
-                                self.r_iy
-                            });
-                        } else {
-                            unreachable!();
-                        }
+                                unreachable!();
+                            }
 
-                        self.address = self.operand as u16;
-                        State::Process
+                            self.address = self.operand as u16;
+                            State::Process
+                        }
                     }
                 }
+
+                State::Process => {
+                    // TODO: Don't read address on store operations
+                    match self.addr_mode {
+                        AddressingMode::Implied => (),
+                        _ => self.operand = self.io.read_byte(self.address),
+                    };
+
+                    let mnemonic: Mnemonic = self.execute.into();
+
+                    use Mnemonic::*;
+                    match mnemonic {
+                        Jam => {
+                            break 'new_state_match State::Halt;
+                        }
+                        Lda => {
+                            self.r_ac = self.operand;
+                        }
+                        Ldx => {
+                            self.r_ix = self.operand;
+                        }
+                        Ldy => {
+                            self.r_iy = self.operand;
+                        }
+                        Sta => {
+                            self.io.write_byte(self.address, self.r_ac);
+                        }
+                        Stx => {
+                            self.io.write_byte(self.address, self.r_ix);
+                        }
+                        Sty => {
+                            self.io.write_byte(self.address, self.r_iy);
+                        }
+                        Nop => {}
+                        _ => todo!(),
+                    };
+
+                    State::FetchOpCode
+                }
+
+                _ => unreachable!(),
             }
-
-            State::Process => {
-                // TODO: Don't read address on store operations
-                match self.addr_mode {
-                    AddressingMode::Implied => (),
-                    _ => self.operand = self.io.read_byte(self.address),
-                };
-
-                let mnemonic: Mnemonic = self.execute.into();
-
-                use Mnemonic::*;
-                match mnemonic {
-                    Lda => {
-                        self.r_ac = self.operand;
-                    }
-                    Ldx => {
-                        self.r_ix = self.operand;
-                    }
-                    Ldy => {
-                        self.r_iy = self.operand;
-                    }
-                    Sta => {
-                        self.io.write_byte(self.address, self.r_ac);
-                    }
-                    Stx => {
-                        self.io.write_byte(self.address, self.r_ix);
-                    }
-                    Sty => {
-                        self.io.write_byte(self.address, self.r_iy);
-                    }
-                    Nop => {}
-                    _ => todo!(),
-                };
-
-                State::FetchOpCode
-            }
-
-            _ => unreachable!(),
         };
     }
 }
@@ -315,13 +325,13 @@ mod tests {
     macro_rules! setup_memory {
         (
             $vm:ident {
-                $( $i:expr => $j:expr ),+
+                $( $i:expr => $j:expr ),*
             }
             $([ $( $reg:ident => $val: expr ),* ])?
         ) => {
             $(
                 $vm.io.write_byte($i, $j);
-            )+
+            )*
 
             $(
                 $(
@@ -333,16 +343,16 @@ mod tests {
 
     macro_rules! for_each_vm_field {
         ($m:ident) => {
+            $m!(st => next_state);
+            $m!(op => execute);
+            $m!(am => addr_mode);
+            $m!(ab => address);
             $m!(t  => i_tm);
             $m!(pc => r_pc);
             $m!(ac => r_ac);
             $m!(ix => r_ix);
             $m!(iy => r_iy);
             $m!(sp => r_sp);
-            $m!(am => addr_mode);
-            $m!(ab => address);
-            $m!(op => execute);
-            $m!(st => next_state);
         };
     }
 
@@ -451,6 +461,11 @@ mod tests {
             });
 
             assert_next_instr_is_nop(&mut vm, &mut st);
+            setup_memory!(vm {
+                vm.r_pc.wrapping_add(1) => JAM,
+                vm.r_pc.wrapping_add(2) => JAM,
+                vm.r_pc.wrapping_add(3) => JAM
+            } [r_pc => 0xF000]);
         }
     }
 
@@ -461,7 +476,7 @@ mod tests {
             let mut st = Status::default();
             setup_memory!(vm {
                 vm.r_pc.wrapping_add(1) => LDA_ZPG,
-                    vm.r_pc.wrapping_add(2) => data,
+                vm.r_pc.wrapping_add(2) => data,
                 vm.r_pc.wrapping_add(3) => NOP_IMP,
                 data as u16 => data ^ 0xFF
             });
@@ -488,6 +503,12 @@ mod tests {
             });
 
             assert_next_instr_is_nop(&mut vm, &mut st);
+            setup_memory!(vm {
+                vm.r_pc.wrapping_add(1) => JAM,
+                vm.r_pc.wrapping_add(2) => JAM,
+                vm.r_pc.wrapping_add(3) => JAM,
+                data as u16 => JAM
+            } [r_pc => 0xF000]);
         }
     }
 
@@ -612,19 +633,19 @@ mod tests {
     #[test]
     fn test_abs_addressing() {
         let mut vm = get_vm();
-        for lpaddr in 0..=512 {
+        for low_nybble in 0..512 {
             let mut st = Status::default();
 
             let pc = vm.r_pc.wrapping_add(1);
             let opcode = LDA_ABS;
-            let addr = (0xFF00_u16).wrapping_add(lpaddr);
+            let addr = (0xFF00_u16).wrapping_add(low_nybble);
 
             setup_memory!(vm {
                 pc => opcode,
                 pc.wrapping_add(1) => (addr & 0x00FF) as u8,
                 pc.wrapping_add(2) => ((addr & 0xFF00) >> 8) as u8,
                 pc.wrapping_add(3) => NOP_IMP,
-                addr => lpaddr as u8
+                addr => low_nybble as u8
             });
 
             use AddressResolverState::*;
@@ -650,11 +671,110 @@ mod tests {
 
                 (cycle {
                     st => State::FetchOpCode,
-                    ac => lpaddr as u8
+                    ac => low_nybble as u8
                 }) (=)
             });
 
             assert_next_instr_is_nop(&mut vm, &mut st);
+            setup_memory!(vm {
+                pc => JAM,
+                pc.wrapping_add(1) => JAM,
+                pc.wrapping_add(2) => JAM,
+                pc.wrapping_add(3) => JAM,
+                addr => JAM
+            } [r_pc => 0xF000]);
         }
+    }
+
+    fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
+        let mut vm = get_vm();
+        for low_nybble in 0..512 {
+            for index in 0..=255_u8 {
+                let mut st = Status::default();
+
+                let pc = vm.r_pc.wrapping_add(1);
+                let addr = (0xFF00_u16).wrapping_add(low_nybble);
+
+                setup_memory!(vm {
+                    pc => opcode,
+                    pc.wrapping_add(1) => (addr & 0x00FF) as u8,
+                    pc.wrapping_add(2) => ((addr & 0xFF00) >> 8) as u8,
+                    pc.wrapping_add(3) => NOP_IMP,
+                    addr.wrapping_add(index.into()) => low_nybble as u8
+                });
+
+                if index_register == IndexRegister::X {
+                    setup_memory!(vm {} [r_ix => index]);
+                } else {
+                    setup_memory!(vm {} [r_iy => index]);
+                }
+
+                use AddressResolverState::*;
+                assert_execution_eq!(vm, st, {
+                    (cycle {
+                        t => 0,
+                        pc => pc.wrapping_add(1),
+                        op => opcode,
+                        am => AddressingMode::AbsoluteI(index_register),
+                        st => State::ResolveAddress(FetchAddress { high_nybble: false })
+                    }) (=)
+
+                    (cycle {
+                        pc => pc.wrapping_add(2),
+                        st => State::ResolveAddress(FetchAddress { high_nybble: true }),
+                        ab => addr & 0x00FF
+                    }) (=)
+
+                    (cycle {
+                        st => State::ResolveAddress(AddIndexRegister {
+                            index_register: index_register, bump_page: false
+                        }),
+                        ab => addr
+                    })
+                });
+
+                if ((addr & 0x00FF) as u8).wrapping_add(index) < index {
+                    assert_execution_eq!(vm, st, {
+                        (cycle {
+                            st => State::ResolveAddress(AddIndexRegister {
+                                index_register: index_register, bump_page: true
+                            }),
+                            ab => (addr & 0xFF00) + (addr as u8).wrapping_add(index) as u16
+                        }) (=)
+                    });
+                }
+
+                assert_execution_eq!(vm, st, {
+                    (cycle {
+                        st => State::Process,
+                        ab => addr.wrapping_add(index.into())
+                    }) (=)
+
+                    (cycle {
+                        st => State::FetchOpCode,
+                        ac => low_nybble as u8
+                    }) (=)
+                });
+
+                assert_next_instr_is_nop(&mut vm, &mut st);
+                setup_memory!(vm {
+                    pc => JAM,
+                    pc.wrapping_add(1) => JAM,
+                    pc.wrapping_add(2) => JAM,
+                    pc.wrapping_add(3) => JAM,
+                    addr => JAM
+                } [r_ix => 0, r_iy => 0, r_pc => 0xF000]);
+            }
+        }
+    }
+
+    #[test]
+    fn test_abx_addressing() {
+        test_abi_addressing(LDA_ABX, IndexRegister::X);
+    }
+
+    #[test]
+    fn test_aby_addressing() {
+        test_abi_addressing(LDA_ABY, IndexRegister::Y);
     }
 }
