@@ -1,16 +1,20 @@
+use bitflags::bitflags;
+
 pub enum CpuVector {
     Nmi = 0xFFFA,
     Rst = 0xFFFC,
-    Brk = 0xFFFE
+    Brk = 0xFFFE,
 }
 
-pub enum Flag {
-    Carry = 0b1,
-    Zero = 0b10,
-    IntDis = 0b100,
-    Decimal = 0b1000,
-    Break = 0b10000,
-    Reserved = 0b100000,
-    Overflow = 0b1000000,
-    Negative = 0b10000000,
+bitflags! {
+    pub struct Flags: u8 {
+        const Carry    = 0b0000_0001;
+        const Zero     = 0b0000_0010;
+        const IntDis   = 0b0000_0100;
+        const Decimal  = 0b0000_1000;
+        const Break    = 0b0001_0000;
+        const Reserved = 0b0010_0000;
+        const Overflow = 0b0100_0000;
+        const Negative = 0b1000_0000;
+    }
 }

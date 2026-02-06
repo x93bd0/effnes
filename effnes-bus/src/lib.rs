@@ -1,2 +1,2 @@
-mod memory;
-pub use memory::Memory;
+mod bus;
+pub use bus::*;

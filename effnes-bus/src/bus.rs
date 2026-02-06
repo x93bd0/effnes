@@ -1,5 +1,9 @@
+/// Memory Bus
 pub trait MemoryBus {
+    /// Should read a byte from a certain address and return it.
     fn read_byte(&mut self, addr: u16) -> u8;
+
+    /// Should write a byte to a certain address.
     fn write_byte(&mut self, addr: u16, data: u8);
 }
 

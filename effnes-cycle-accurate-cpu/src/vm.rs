@@ -1,22 +1,9 @@
 use crate::{
     addr::{AddressingMode, IndexRegister},
-    bus::MemoryBus,
+    consts::Flags,
     opcode::Mnemonic,
 };
-use bitflags::bitflags;
-
-bitflags! {
-    pub struct Flags: u8 {
-        const Carry    = 0b0000_0001;
-        const Zero     = 0b0000_0010;
-        const IntDis   = 0b0000_0100;
-        const Decimal  = 0b0000_1000;
-        const Break    = 0b0001_0000;
-        const Reserved = 0b0010_0000;
-        const Overflow = 0b0100_0000;
-        const Negative = 0b1000_0000;
-    }
-}
+use effnes_bus::MemoryBus;
 
 #[derive(Debug, PartialEq)]
 enum AddressResolverState {
@@ -135,7 +122,7 @@ impl<T: MemoryBus> VM<T> {
                         self.address = self.operand as u16;
                         match &self.addr_mode {
                             AddressingMode::ZeroPage => State::Process,
-                            AddressingMode::ZeroPageI(ir) => State::ResolveAddress(IndZPDummyRead),
+                            AddressingMode::ZeroPageI(_) => State::ResolveAddress(IndZPDummyRead),
                             AddressingMode::IndirectI(ir) => {
                                 State::ResolveAddress(if *ir == IndexRegister::X {
                                     IndXDummyRead
@@ -281,8 +268,7 @@ impl<T: MemoryBus + Default> Default for VM<T> {
 // #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bus::BasicMemory;
-    use std::cmp::min;
+    use effnes_bus::BasicMemory;
 
     const NOP_IMP: u8 = 0xEA;
     const LDA_IMM: u8 = 0xA9;
@@ -421,7 +407,7 @@ mod tests {
         }
     }
 
-    fn test_is_nop(mut vm: VM<BasicMemory>, mut st: Status) {
+    fn assert_next_instr_is_nop(mut vm: VM<BasicMemory>, mut st: Status) {
         let pc = vm.r_pc.wrapping_add(1);
         assert_execution_eq!(vm, st, {
             (set<t>(0))
@@ -460,7 +446,7 @@ mod tests {
             (+) (=)
         });
 
-        test_is_nop(vm, st);
+        assert_next_instr_is_nop(vm, st);
     }
 
     #[test]
@@ -490,7 +476,7 @@ mod tests {
             (+) (=)
         });
 
-        test_is_nop(vm, st);
+        assert_next_instr_is_nop(vm, st);
     }
 
     #[test]
@@ -525,7 +511,7 @@ mod tests {
             (+) (=)
         });
 
-        test_is_nop(vm, st);
+        assert_next_instr_is_nop(vm, st);
     }
 
     #[test]
@@ -560,7 +546,7 @@ mod tests {
             (+) (=)
         });
 
-        test_is_nop(vm, st);
+        assert_next_instr_is_nop(vm, st);
     }
 
     #[test]
@@ -597,6 +583,6 @@ mod tests {
             (+) (=)
         });
 
-        test_is_nop(vm, st);
+        assert_next_instr_is_nop(vm, st);
     }
 }

@@ -1,7 +1,8 @@
 [package]
-name = "effnes-pretty-cpu"
+name = "effnes-cycle-accurate-cpu"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 bitflags = "2.10.0"
+effnes-bus = { path = "../effnes-bus" }

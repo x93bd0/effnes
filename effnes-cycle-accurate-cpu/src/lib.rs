@@ -1,4 +1,4 @@
 pub mod addr;
-pub mod bus;
+pub mod consts;
 pub mod opcode;
 pub mod vm;
