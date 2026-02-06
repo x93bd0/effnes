@@ -1,0 +1,13 @@
+Accumulator:ACC
+Immediate:IMM
+Implied:IMP
+Relative:REL
+Absolute:ABS
+ZeroPage:ZPG
+Indirect:IND
+AbsoluteX:ABX
+AbsoluteY:ABY
+ZeroPageX:ZPX
+ZeroPageY:ZPY
+IndirectX:INX
+IndirectY:INY
