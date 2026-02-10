@@ -24,7 +24,7 @@ struct Status {
     am: Option<AddressingMode>,
     ab: Option<u16>,
     op: Option<u8>,
-    st: Option<State>,
+    nst: Option<State>,
 }
 
 fn get_vm() -> VM<BasicMemory> {
@@ -54,10 +54,10 @@ macro_rules! setup_memory {
 
 macro_rules! for_each_vm_field {
         ($m:ident) => {
-            $m!(st => next_state);
-            $m!(op => execute);
-            $m!(am => addr_mode);
-            $m!(ab => address);
+            $m!(nst => i_nst);
+            $m!(op => i_ex);
+            $m!(am => i_adm);
+            $m!(ab => i_ab);
             $m!(t  => i_tm);
             $m!(pc => r_pc);
             $m!(ac => r_ac);
@@ -134,11 +134,11 @@ fn assert_next_instr_is_nop(vm: &mut VM<BasicMemory>, st: &mut Status) {
             pc => (pc + 1),
             op => NOP_IMP,
             am => (AddressingMode::Implied),
-            st => (State::Process)
+            nst => (State::Process)
         }) (=)
 
         (cycle {
-            st => State::FetchOpCode
+            nst => State::FetchOpCode
         }) (=)
     });
 }
@@ -162,12 +162,12 @@ fn test_imm_addressing() {
                 ab => pc + 1,
                 op => LDA_IMM,
                 am => AddressingMode::Immediate,
-                st => State::Process
+                nst => State::Process
             }) (=)
 
             (cycle {
                 ac => data,
-                st => State::FetchOpCode
+                nst => State::FetchOpCode
             }) (=)
         });
 
@@ -199,16 +199,16 @@ fn test_zp_addressing() {
                 pc => pc + 1,
                 op => LDA_ZPG,
                 am => AddressingMode::ZeroPage,
-                st => State::ResolveAddress(AddressResolverState::FetchOperand)
+                nst => State::ResolveAddress(AddressResolverState::FetchOperand)
             }) (=)
 
             (cycle {
-                st => State::Process,
+                nst => State::Process,
                 ab => data as u16,
             }) (=)
 
             (cycle {
-                st => State::FetchOpCode,
+                nst => State::FetchOpCode,
                 ac => data ^ 0xFF
             }) (=)
         });
@@ -246,26 +246,26 @@ fn test_zpx_addressing() {
                     pc => pc.wrapping_add(1),
                     op => LDA_ZPX,
                     am => AddressingMode::ZeroPageI(IndexRegister::X),
-                    st => State::ResolveAddress(FetchOperand),
+                    nst => State::ResolveAddress(FetchOperand),
                 }) (=)
 
                 (cycle {
-                    st => State::ResolveAddress(IndZPDummyRead),
+                    nst => State::ResolveAddress(IndZPDummyRead),
                     ab => zpaddr.into(),
                 }) (=)
 
                 (cycle {
-                    st => State::ResolveAddress(ZeroPageAddIndexRegister),
+                    nst => State::ResolveAddress(ZeroPageAddIndexRegister),
                 }) (=)
 
                 (cycle {
-                    st => State::Process,
+                    nst => State::Process,
                     ab => zpaddr
                         .wrapping_add(index) as u16,
                 }) (=)
 
                 (cycle {
-                    st => State::FetchOpCode,
+                    nst => State::FetchOpCode,
                     ac => data,
                 }) (=)
             });
@@ -304,26 +304,26 @@ fn test_zpy_addressing() {
                     pc => pc + 1,
                     op => LDX_ZPY,
                     am => AddressingMode::ZeroPageI(IndexRegister::Y),
-                    st => State::ResolveAddress(FetchOperand)
+                    nst => State::ResolveAddress(FetchOperand)
                 }) (=)
 
                 (cycle {
-                    st => State::ResolveAddress(IndZPDummyRead),
+                    nst => State::ResolveAddress(IndZPDummyRead),
                     ab => zpaddr.into()
                 }) (=)
 
                 (cycle {
-                    st => State::ResolveAddress(ZeroPageAddIndexRegister)
+                    nst => State::ResolveAddress(ZeroPageAddIndexRegister)
                 }) (=)
 
                 (cycle {
-                    st => State::Process,
+                    nst => State::Process,
                     ab => zpaddr
                         .wrapping_add(index) as u16
                 }) (=)
 
                 (cycle {
-                    st => State::FetchOpCode,
+                    nst => State::FetchOpCode,
                     ix => zpaddr
                 }) (=)
             });
@@ -366,22 +366,22 @@ fn test_abs_addressing() {
                 pc => pc + 1,
                 op => opcode,
                 am => AddressingMode::Absolute,
-                st => State::ResolveAddress(FetchAddress { high_nybble: false })
+                nst => State::ResolveAddress(FetchAddress { high_nybble: false })
             }) (=)
 
             (cycle {
                 pc => pc + 2,
-                st => State::ResolveAddress(FetchAddress { high_nybble: true }),
+                nst => State::ResolveAddress(FetchAddress { high_nybble: true }),
                 ab => addr & 0x00FF
             }) (=)
 
             (cycle {
-                st => State::Process,
+                nst => State::Process,
                 ab => addr
             }) (=)
 
             (cycle {
-                st => State::FetchOpCode,
+                nst => State::FetchOpCode,
                 ac => low_nybble as u8
             }) (=)
         });
@@ -427,17 +427,17 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
                     pc => pc.wrapping_add(1),
                     op => opcode,
                     am => AddressingMode::AbsoluteI(index_register),
-                    st => State::ResolveAddress(FetchAddress { high_nybble: false })
+                    nst => State::ResolveAddress(FetchAddress { high_nybble: false })
                 }) (=)
 
                 (cycle {
                     pc => pc.wrapping_add(2),
-                    st => State::ResolveAddress(FetchAddress { high_nybble: true }),
+                    nst => State::ResolveAddress(FetchAddress { high_nybble: true }),
                     ab => addr & 0x00FF
                 }) (=)
 
                 (cycle {
-                    st => State::ResolveAddress(AddIndexRegister {
+                    nst => State::ResolveAddress(AddIndexRegister {
                         index_register: index_register, bump_page: false
                     }),
                     ab => addr
@@ -447,7 +447,7 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
             if ((addr & 0x00FF) as u8).wrapping_add(index) < index {
                 assert_execution_eq!(vm, st, {
                     (cycle {
-                        st => State::ResolveAddress(AddIndexRegister {
+                        nst => State::ResolveAddress(AddIndexRegister {
                             index_register: index_register, bump_page: true
                         }),
                         ab => (addr & 0xFF00) + (addr as u8).wrapping_add(index) as u16
@@ -457,12 +457,12 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
 
             assert_execution_eq!(vm, st, {
                 (cycle {
-                    st => State::Process,
+                    nst => State::Process,
                     ab => addr.wrapping_add(index.into())
                 }) (=)
 
                 (cycle {
-                    st => State::FetchOpCode,
+                    nst => State::FetchOpCode,
                     ac => low_nybble as u8
                 }) (=)
             });
