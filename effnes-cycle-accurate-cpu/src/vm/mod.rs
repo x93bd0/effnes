@@ -82,6 +82,13 @@ pub struct VM<T: MemoryBus> {
     pub io: T,
 }
 
+macro_rules! update_register {
+    ($vm:ident.$reg:ident = $value:expr) => {
+        $vm.$reg = $value;
+        $vm.set_nz_flags(($vm.$reg).into());
+    };
+}
+
 impl<T: MemoryBus> VM<T> {
     pub fn new(memory: T) -> Self {
         Self {
@@ -117,6 +124,19 @@ impl<T: MemoryBus> VM<T> {
     fn stack_pop_byte(&mut self) -> u8 {
         self.r_sp = self.r_sp.wrapping_add(1);
         self.io.read_byte((self.r_sp as u16) | 0x100)
+    }
+
+    fn set_flag(&mut self, flag: Flags, value: bool) {
+        if value {
+            self.r_ps |= flag;
+        } else {
+            self.r_ps = self.r_ps.difference(flag);
+        }
+    }
+
+    fn set_nz_flags(&mut self, value: u8) {
+        self.set_flag(Flags::Negative, value & 0x80 > 0);
+        self.set_flag(Flags::Zero, value == 0);
     }
 
     pub fn cold_reset(&mut self) {
@@ -302,14 +322,81 @@ impl<T: MemoryBus> VM<T> {
                         Jam => {
                             break 'new_state_match State::Halt;
                         }
+
+                        Asl => {
+                            todo!();
+                        }
+
+                        Lsr => {
+                            todo!();
+                        }
+
+                        Rol => {
+                            todo!();
+                        }
+
+                        Clc => {
+                            self.r_ps = self.r_ps.difference(Flags::Carry);
+                        }
+                        Cld => {
+                            self.r_ps = self.r_ps.difference(Flags::Decimal);
+                        }
+                        Cli => {
+                            self.r_ps = self.r_ps.difference(Flags::IntDis);
+                        }
+                        Clv => {
+                            self.r_ps = self.r_ps.difference(Flags::Overflow);
+                        }
+                        Sec => {
+                            self.r_ps = self.r_ps.union(Flags::Carry);
+                        }
+                        Sed => {
+                            self.r_ps = self.r_ps.union(Flags::Decimal);
+                        }
+                        Sei => {
+                            self.r_ps = self.r_ps.union(Flags::IntDis);
+                        }
+
+                        Inx => {
+                            update_register!(self.r_ix = self.r_ix.wrapping_add(1));
+                        }
+                        Iny => {
+                            update_register!(self.r_ix = self.r_ix.wrapping_add(1));
+                        }
+                        Dex => {
+                            update_register!(self.r_ix = self.r_ix.wrapping_sub(1));
+                        }
+                        Dey => {
+                            update_register!(self.r_iy = self.r_iy.wrapping_sub(1));
+                        }
+
+                        Tax => {
+                            update_register!(self.r_ix = self.r_ac);
+                        }
+                        Txa => {
+                            update_register!(self.r_ac = self.r_ix);
+                        }
+                        Tay => {
+                            update_register!(self.r_iy = self.r_ac);
+                        }
+                        Tya => {
+                            update_register!(self.r_ac = self.r_iy);
+                        }
+                        Tsx => {
+                            update_register!(self.r_ix = self.r_sp);
+                        }
+                        Txs => {
+                            update_register!(self.r_sp = self.r_ix);
+                        }
+
                         Lda => {
-                            self.r_ac = self.i_opr;
+                            update_register!(self.r_ac = self.i_opr);
                         }
                         Ldx => {
-                            self.r_ix = self.i_opr;
+                            update_register!(self.r_ix = self.i_opr);
                         }
                         Ldy => {
-                            self.r_iy = self.i_opr;
+                            update_register!(self.r_iy = self.i_opr);
                         }
                         Sta => {
                             self.io.write_byte(self.i_ab, self.r_ac);
