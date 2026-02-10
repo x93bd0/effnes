@@ -1,6 +1,6 @@
 use crate::{
     addr::{AddressingMode, IndexRegister},
-    consts::Flags,
+    consts::{CpuVector, Flags},
     opcode::Mnemonic,
 };
 use effnes_bus::MemoryBus;
@@ -9,10 +9,10 @@ use effnes_bus::MemoryBus;
 enum AddressResolverState {
     FetchOperand,
     FetchAddress {
-        high_nybble: bool,
+        high_byte: bool,
     },
     FetchZeroPageAddress {
-        high_nybble: bool,
+        high_byte: bool,
     },
     IndXDummyRead,
     IndZPDummyRead,
@@ -120,11 +120,20 @@ impl<T: MemoryBus> VM<T> {
     }
 
     pub fn cold_reset(&mut self) {
-        self.r_ps = Flags::Reserved | Flags::Break | Flags::IntDis | Flags::Zero;
-        self.r_sp = 0xFF;
+        self.r_ps = Flags::empty();
         self.r_ac = 0;
         self.r_ix = 0;
         self.r_iy = 0;
+
+        self.r_sp = 0x00;
+        self.r_pc = CpuVector::Rst as u16;
+
+        self.warm_reset();
+    }
+
+    pub fn warm_reset(&mut self) {
+        self.r_ps |= Flags::IntDis;
+        self.r_sp = self.r_sp.wrapping_sub(0x03);
 
         self.i_nst = State::FetchOpCode;
         self.i_adm = AddressingMode::Implied;
@@ -133,8 +142,6 @@ impl<T: MemoryBus> VM<T> {
         self.i_ab = 0;
         self.i_tm = 0;
     }
-
-    pub fn warm_reset(&mut self) {}
 
     pub fn cycle(&mut self) {
         self.i_tm += 1;
@@ -160,7 +167,7 @@ impl<T: MemoryBus> VM<T> {
                             State::ResolveAddress(AddressResolverState::FetchOperand)
                         }
                         _ => State::ResolveAddress(AddressResolverState::FetchAddress {
-                            high_nybble: false,
+                            high_byte: false,
                         }),
                     }
                 }
@@ -181,17 +188,17 @@ impl<T: MemoryBus> VM<T> {
                                     State::ResolveAddress(if *ir == IndexRegister::X {
                                         IndXDummyRead
                                     } else {
-                                        FetchZeroPageAddress { high_nybble: false }
+                                        FetchZeroPageAddress { high_byte: false }
                                     })
                                 }
                                 _ => unreachable!(),
                             }
                         }
 
-                        FetchAddress { high_nybble } => {
-                            if !high_nybble {
+                        FetchAddress { high_byte } => {
+                            if !high_byte {
                                 self.i_ab = self.next_byte() as u16;
-                                State::ResolveAddress(FetchAddress { high_nybble: true })
+                                State::ResolveAddress(FetchAddress { high_byte: true })
                             } else {
                                 self.i_ab += (self.io.read_byte(self.r_pc) as u16) << 8;
                                 match &self.i_adm {
@@ -209,7 +216,7 @@ impl<T: MemoryBus> VM<T> {
                         IndXDummyRead => {
                             self.io.read_byte(self.i_opr as u16);
                             self.i_opr = self.i_opr.wrapping_add(self.r_ix);
-                            State::ResolveAddress(FetchZeroPageAddress { high_nybble: false })
+                            State::ResolveAddress(FetchZeroPageAddress { high_byte: false })
                         }
 
                         IndZPDummyRead => {
@@ -217,11 +224,11 @@ impl<T: MemoryBus> VM<T> {
                             State::ResolveAddress(ZeroPageAddIndexRegister)
                         }
 
-                        FetchZeroPageAddress { high_nybble } => {
-                            if !high_nybble {
+                        FetchZeroPageAddress { high_byte } => {
+                            if !high_byte {
                                 self.i_ab = self.io.read_byte(self.i_opr as u16) as u16;
                                 self.i_opr = self.i_opr.wrapping_add(1);
-                                State::ResolveAddress(FetchZeroPageAddress { high_nybble: true })
+                                State::ResolveAddress(FetchZeroPageAddress { high_byte: true })
                             } else {
                                 self.i_ab += (self.io.read_byte(self.i_opr as u16) as u16) << 8;
                                 match self.i_adm {
@@ -249,9 +256,9 @@ impl<T: MemoryBus> VM<T> {
                                 } else {
                                     self.r_iy
                                 };
-                                let low_nybble = (self.i_ab as u8).wrapping_add(index);
-                                if low_nybble < index {
-                                    self.i_ab = (self.i_ab & 0xFF00) + low_nybble as u16;
+                                let low_byte = (self.i_ab as u8).wrapping_add(index);
+                                if low_byte < index {
+                                    self.i_ab = (self.i_ab & 0xFF00) + low_byte as u16;
                                     self.io.read_byte(self.i_ab);
                                     State::ResolveAddress(AddIndexRegister {
                                         index_register: *index_register,
