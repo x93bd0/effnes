@@ -414,26 +414,12 @@ impl<T: MemoryBus> VM<T> {
                             todo!();
                         }
 
-                        Clc => {
-                            self.r_ps = self.r_ps.difference(Flags::Carry);
+                        Clx { flag } => {
+                            self.r_ps = self.r_ps.difference(flag);
                         }
-                        Cld => {
-                            self.r_ps = self.r_ps.difference(Flags::Decimal);
-                        }
-                        Cli => {
-                            self.r_ps = self.r_ps.difference(Flags::IntDis);
-                        }
-                        Clv => {
-                            self.r_ps = self.r_ps.difference(Flags::Overflow);
-                        }
-                        Sec => {
-                            self.r_ps = self.r_ps.union(Flags::Carry);
-                        }
-                        Sed => {
-                            self.r_ps = self.r_ps.union(Flags::Decimal);
-                        }
-                        Sei => {
-                            self.r_ps = self.r_ps.union(Flags::IntDis);
+
+                        Sfx { flag } => {
+                            self.r_ps = self.r_ps.union(flag);
                         }
 
                         Inx => {
@@ -477,6 +463,7 @@ impl<T: MemoryBus> VM<T> {
                         Ldy => {
                             update_register!(self.r_iy = self.i_opr);
                         }
+
                         Sta => {
                             self.io.write_byte(self.i_ab, self.r_ac);
                         }
@@ -486,8 +473,19 @@ impl<T: MemoryBus> VM<T> {
                         Sty => {
                             self.io.write_byte(self.i_ab, self.r_iy);
                         }
+
+                        Bxx { flag, set } => {
+                            if self.r_ps.contains(flag) == set {
+                                // TODO: correct cycle count
+                                self.r_pc = self.r_pc.wrapping_add(self.i_opr as u16);
+                            }
+                        }
+
                         Nop => {}
-                        _ => todo!(),
+
+                        _ => {
+                            todo!();
+                        }
                     };
 
                     State::FetchOpCode

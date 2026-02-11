@@ -19,3 +19,9 @@ bitflags! {
         const Negative = 0b1000_0000;
     }
 }
+
+impl Into<u8> for Flags {
+    fn into(self) -> u8 {
+        self.bits()
+    }
+}
