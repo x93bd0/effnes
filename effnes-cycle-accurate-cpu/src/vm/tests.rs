@@ -344,19 +344,19 @@ const MAGIC: u8 = 0xF0;
 #[test]
 fn test_abs_addressing() {
     let mut vm = get_vm();
-    for low_nybble in 0..512 {
+    for low_byte in 0..512 {
         let mut st = Status::default();
 
         let pc = vm.r_pc.wrapping_add(1);
         let opcode = LDA_ABS;
-        let addr = (0xFF00_u16).wrapping_add(low_nybble);
+        let addr = (0xFF00_u16).wrapping_add(low_byte);
 
         setup_memory!(vm {
             pc => opcode,
             pc.wrapping_add(1) => (addr & 0x00FF) as u8,
             pc.wrapping_add(2) => ((addr & 0xFF00) >> 8) as u8,
             pc.wrapping_add(3) => NOP_IMP,
-            addr => low_nybble as u8
+            addr => low_byte as u8
         });
 
         use AddressResolverState::*;
@@ -366,12 +366,12 @@ fn test_abs_addressing() {
                 pc => pc + 1,
                 op => opcode,
                 am => AddressingMode::Absolute,
-                nst => State::ResolveAddress(FetchAddress { high_nybble: false })
+                nst => State::ResolveAddress(FetchAddress { high_byte: false })
             }) (=)
 
             (cycle {
                 pc => pc + 2,
-                nst => State::ResolveAddress(FetchAddress { high_nybble: true }),
+                nst => State::ResolveAddress(FetchAddress { high_byte: true }),
                 ab => addr & 0x00FF
             }) (=)
 
@@ -382,7 +382,7 @@ fn test_abs_addressing() {
 
             (cycle {
                 nst => State::FetchOpCode,
-                ac => low_nybble as u8
+                ac => low_byte as u8
             }) (=)
         });
 
@@ -399,19 +399,19 @@ fn test_abs_addressing() {
 
 fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
     let mut vm = get_vm();
-    for low_nybble in 0..512 {
+    for low_byte in 0..512 {
         for index in 0..=255_u8 {
             let mut st = Status::default();
 
             let pc = vm.r_pc.wrapping_add(1);
-            let addr = (0xFF00_u16).wrapping_add(low_nybble);
+            let addr = (0xFF00_u16).wrapping_add(low_byte);
 
             setup_memory!(vm {
                 pc => opcode,
                 pc.wrapping_add(1) => (addr & 0x00FF) as u8,
                 pc.wrapping_add(2) => ((addr & 0xFF00) >> 8) as u8,
                 pc.wrapping_add(3) => NOP_IMP,
-                addr.wrapping_add(index.into()) => low_nybble as u8
+                addr.wrapping_add(index.into()) => low_byte as u8
             });
 
             if index_register == IndexRegister::X {
@@ -427,12 +427,12 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
                     pc => pc.wrapping_add(1),
                     op => opcode,
                     am => AddressingMode::AbsoluteI(index_register),
-                    nst => State::ResolveAddress(FetchAddress { high_nybble: false })
+                    nst => State::ResolveAddress(FetchAddress { high_byte: false })
                 }) (=)
 
                 (cycle {
                     pc => pc.wrapping_add(2),
-                    nst => State::ResolveAddress(FetchAddress { high_nybble: true }),
+                    nst => State::ResolveAddress(FetchAddress { high_byte: true }),
                     ab => addr & 0x00FF
                 }) (=)
 
@@ -463,7 +463,7 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
 
                 (cycle {
                     nst => State::FetchOpCode,
-                    ac => low_nybble as u8
+                    ac => low_byte as u8
                 }) (=)
             });
 
