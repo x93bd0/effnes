@@ -323,6 +323,85 @@ impl<T: MemoryBus> VM<T> {
                             break 'new_state_match State::Halt;
                         }
 
+                        Adc => {
+                            let value: u16 = (self.r_ac as u16)
+                                + (self.i_opr as u16)
+                                + (self.r_ps.contains(Flags::Carry) as u16);
+                            self.set_flag(Flags::Carry, value > 0xFF);
+                            self.set_flag(
+                                Flags::Overflow,
+                                (self.r_ac & 0x80) == (self.i_opr & 0x80)
+                                    && (self.r_ac & 0x80) != (value as u8 & 0x80),
+                            );
+                            update_register!(self.r_ac = value as u8);
+                        }
+
+                        Sbc => {
+                            let value: u16 = ((self.r_ac as u16) + (!self.i_opr as u16))
+                                .wrapping_sub(self.r_ps.contains(Flags::Carry) as u16);
+                            self.set_flag(Flags::Carry, value > 0xFF);
+                            self.set_flag(
+                                Flags::Overflow,
+                                (self.r_ac & 0x80) == (self.i_opr & 0x80)
+                                    && (self.r_ac & 0x80) != (value as u8 & 0x80),
+                            );
+                            update_register!(self.r_ac = value as u8);
+                        }
+
+                        And => {
+                            update_register!(self.r_ac = self.r_ac & self.i_opr);
+                        }
+
+                        Bit => {
+                            self.set_flag(Flags::Zero, self.r_ac & self.i_opr != 0);
+                            self.set_flag(
+                                Flags::Negative,
+                                self.i_opr & Flags::Negative.bits() != 0,
+                            );
+                            self.set_flag(
+                                Flags::Overflow,
+                                self.i_opr & Flags::Overflow.bits() != 0,
+                            );
+                        }
+
+                        Cmp => {
+                            let value: u16 = (self.r_ac as u16) + (!self.i_opr as u16);
+                            self.set_flag(Flags::Carry, value > 0xFF);
+                            self.set_flag(
+                                Flags::Overflow,
+                                (self.r_ac & 0x80) == (self.i_opr & 0x80)
+                                    && (self.r_ac & 0x80) != (value as u8 & 0x80),
+                            );
+                        }
+
+                        Cpx => {
+                            let value: u16 = (self.r_ix as u16) + (!self.i_opr as u16);
+                            self.set_flag(Flags::Carry, value > 0xFF);
+                            self.set_flag(
+                                Flags::Overflow,
+                                (self.r_ix & 0x80) == (self.i_opr & 0x80)
+                                    && (self.r_ix & 0x80) != (value as u8 & 0x80),
+                            );
+                        }
+
+                        Cpy => {
+                            let value: u16 = (self.r_iy as u16) + (!self.i_opr as u16);
+                            self.set_flag(Flags::Carry, value > 0xFF);
+                            self.set_flag(
+                                Flags::Overflow,
+                                (self.r_iy & 0x80) == (self.i_opr & 0x80)
+                                    && (self.r_iy & 0x80) != (value as u8 & 0x80),
+                            );
+                        }
+
+                        Eor => {
+                            update_register!(self.r_ac = self.r_ac ^ self.i_opr);
+                        }
+
+                        Ora => {
+                            update_register!(self.r_ac = self.r_ac | self.i_opr);
+                        }
+
                         Asl => {
                             todo!();
                         }
