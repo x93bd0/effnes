@@ -25,9 +25,10 @@ enum AddressResolverState {
 
 #[derive(Debug, PartialEq)]
 enum State {
-    FetchOpCode,
+    Fetch,
     ResolveAddress(AddressResolverState),
     Process,
+    Write { dummy: bool, data: u8 },
     Halt,
 }
 
@@ -52,7 +53,7 @@ pub struct VM<T: MemoryBus> {
 
     /// (Internal) ADdressing Mode
     /// Stores the addressing mode that the current opcode will use.
-    /// It is set on the [State::FetchOpcode] state.
+    /// It is set on the [State::Fetch] state.
     i_adm: AddressingMode,
 
     /// (Internal) OPeRand
@@ -63,7 +64,7 @@ pub struct VM<T: MemoryBus> {
 
     /// (Internal) EXecute
     /// Stores the opcode being executed.
-    /// It is set on the [State::FetchOpcode] state.
+    /// It is set on the [State::Fetch] state.
     i_ex: u8,
 
     /// (Internal) Address Bus
@@ -73,7 +74,7 @@ pub struct VM<T: MemoryBus> {
 
     /// (Internal) TiMing
     /// Stores the executed cycle number of the current instruction.
-    /// It is set to T0 on every [State::FetchOpcode] state.
+    /// It is set to T0 on every [State::Fetch] state.
     i_tm: u8,
 
     /// Input and Output bus
@@ -99,7 +100,7 @@ impl<T: MemoryBus> VM<T> {
             r_iy: 0,
             r_ps: Flags::empty(),
 
-            i_nst: State::FetchOpCode,
+            i_nst: State::Fetch,
             i_adm: AddressingMode::Implied,
             i_opr: 0,
             i_ex: 0,
@@ -155,7 +156,7 @@ impl<T: MemoryBus> VM<T> {
         self.r_ps |= Flags::IntDis;
         self.r_sp = self.r_sp.wrapping_sub(0x03);
 
-        self.i_nst = State::FetchOpCode;
+        self.i_nst = State::Fetch;
         self.i_adm = AddressingMode::Implied;
         self.i_opr = 0;
         self.i_ex = 0;
@@ -169,7 +170,7 @@ impl<T: MemoryBus> VM<T> {
             match &self.i_nst {
                 State::Halt => State::Halt,
 
-                State::FetchOpCode => {
+                State::Fetch => {
                     self.i_tm = 0;
                     self.r_pc = self.r_pc.wrapping_add(1);
                     self.i_ex = self.next_byte();
@@ -604,7 +605,17 @@ impl<T: MemoryBus> VM<T> {
                         }
                     };
 
-                    State::FetchOpCode
+                    State::Fetch
+                }
+
+                State::Write { dummy: true, data } => State::Write {
+                    dummy: false,
+                    data: *data,
+                },
+
+                State::Write { dummy: false, data } => {
+                    self.io.write_byte(self.i_ab, *data);
+                    State::Fetch
                 }
             }
         };

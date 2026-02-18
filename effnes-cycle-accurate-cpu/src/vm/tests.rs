@@ -1,4 +1,5 @@
 use super::*;
+use AddressResolverState::*;
 use effnes_bus::BasicMemory;
 
 const NOP_IMP: u8 = 0xEA;
@@ -138,7 +139,7 @@ fn assert_next_instr_is_nop(vm: &mut VM<BasicMemory>, st: &mut Status) {
         }) (=)
 
         (cycle {
-            nst => State::FetchOpCode
+            nst => State::Fetch
         }) (=)
     });
 }
@@ -167,7 +168,7 @@ fn test_imm_addressing() {
 
             (cycle {
                 ac => data,
-                nst => State::FetchOpCode
+                nst => State::Fetch
             }) (=)
         });
 
@@ -199,7 +200,7 @@ fn test_zp_addressing() {
                 pc => pc + 1,
                 op => LDA_ZPG,
                 am => AddressingMode::ZeroPage,
-                nst => State::ResolveAddress(AddressResolverState::FetchOperand)
+                nst => State::ResolveAddress(FetchOperand)
             }) (=)
 
             (cycle {
@@ -208,7 +209,7 @@ fn test_zp_addressing() {
             }) (=)
 
             (cycle {
-                nst => State::FetchOpCode,
+                nst => State::Fetch,
                 ac => data ^ 0xFF
             }) (=)
         });
@@ -239,7 +240,6 @@ fn test_zpx_addressing() {
                     zpaddr.wrapping_add(index) as u16 => data
                 } [r_ix => index]);
 
-            use AddressResolverState::*;
             assert_execution_eq!(vm, st, {
                 (cycle {
                     t  => 0,
@@ -265,7 +265,7 @@ fn test_zpx_addressing() {
                 }) (=)
 
                 (cycle {
-                    nst => State::FetchOpCode,
+                    nst => State::Fetch,
                     ac => data,
                 }) (=)
             });
@@ -297,7 +297,6 @@ fn test_zpy_addressing() {
                     zpaddr.wrapping_add(index) as u16 => data
                 } [r_iy => index]);
 
-            use AddressResolverState::*;
             assert_execution_eq!(vm, st, {
                 (cycle {
                     t => 0,
@@ -323,7 +322,7 @@ fn test_zpy_addressing() {
                 }) (=)
 
                 (cycle {
-                    nst => State::FetchOpCode,
+                    nst => State::Fetch,
                     ix => zpaddr
                 }) (=)
             });
@@ -359,7 +358,6 @@ fn test_abs_addressing() {
             addr => low_byte as u8
         });
 
-        use AddressResolverState::*;
         assert_execution_eq!(vm, st, {
             (cycle {
                 t => 0,
@@ -381,7 +379,7 @@ fn test_abs_addressing() {
             }) (=)
 
             (cycle {
-                nst => State::FetchOpCode,
+                nst => State::Fetch,
                 ac => low_byte as u8
             }) (=)
         });
@@ -420,7 +418,6 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
                 setup_memory!(vm {} [r_iy => index]);
             }
 
-            use AddressResolverState::*;
             assert_execution_eq!(vm, st, {
                 (cycle {
                     t => 0,
@@ -462,7 +459,7 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
                 }) (=)
 
                 (cycle {
-                    nst => State::FetchOpCode,
+                    nst => State::Fetch,
                     ac => low_byte as u8
                 }) (=)
             });
