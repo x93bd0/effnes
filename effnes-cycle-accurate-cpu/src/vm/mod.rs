@@ -323,97 +323,7 @@ impl<T: MemoryBus> VM<T> {
                             break 'new_state_match State::Halt;
                         }
 
-                        Adc => {
-                            let value: u16 = (self.r_ac as u16)
-                                + (self.i_opr as u16)
-                                + (self.r_ps.contains(Flags::Carry) as u16);
-                            self.set_flag(Flags::Carry, value > 0xFF);
-                            self.set_flag(
-                                Flags::Overflow,
-                                (self.r_ac & 0x80) == (self.i_opr & 0x80)
-                                    && (self.r_ac & 0x80) != (value as u8 & 0x80),
-                            );
-                            update_register!(self.r_ac = value as u8);
-                        }
-
-                        Sbc => {
-                            let value: u16 = ((self.r_ac as u16) + (!self.i_opr as u16))
-                                .wrapping_sub(self.r_ps.contains(Flags::Carry) as u16);
-                            self.set_flag(Flags::Carry, value > 0xFF);
-                            self.set_flag(
-                                Flags::Overflow,
-                                (self.r_ac & 0x80) == (self.i_opr & 0x80)
-                                    && (self.r_ac & 0x80) != (value as u8 & 0x80),
-                            );
-                            update_register!(self.r_ac = value as u8);
-                        }
-
-                        And => {
-                            update_register!(self.r_ac = self.r_ac & self.i_opr);
-                        }
-
-                        Bit => {
-                            self.set_flag(Flags::Zero, self.r_ac & self.i_opr != 0);
-                            self.set_flag(
-                                Flags::Negative,
-                                self.i_opr & Flags::Negative.bits() != 0,
-                            );
-                            self.set_flag(
-                                Flags::Overflow,
-                                self.i_opr & Flags::Overflow.bits() != 0,
-                            );
-                        }
-
-                        Cmp => {
-                            let value: u16 = (self.r_ac as u16) + (!self.i_opr as u16);
-                            self.set_flag(Flags::Carry, value > 0xFF);
-                            self.set_flag(
-                                Flags::Overflow,
-                                (self.r_ac & 0x80) == (self.i_opr & 0x80)
-                                    && (self.r_ac & 0x80) != (value as u8 & 0x80),
-                            );
-                        }
-
-                        Cpx => {
-                            let value: u16 = (self.r_ix as u16) + (!self.i_opr as u16);
-                            self.set_flag(Flags::Carry, value > 0xFF);
-                            self.set_flag(
-                                Flags::Overflow,
-                                (self.r_ix & 0x80) == (self.i_opr & 0x80)
-                                    && (self.r_ix & 0x80) != (value as u8 & 0x80),
-                            );
-                        }
-
-                        Cpy => {
-                            let value: u16 = (self.r_iy as u16) + (!self.i_opr as u16);
-                            self.set_flag(Flags::Carry, value > 0xFF);
-                            self.set_flag(
-                                Flags::Overflow,
-                                (self.r_iy & 0x80) == (self.i_opr & 0x80)
-                                    && (self.r_iy & 0x80) != (value as u8 & 0x80),
-                            );
-                        }
-
-                        Eor => {
-                            update_register!(self.r_ac = self.r_ac ^ self.i_opr);
-                        }
-
-                        Ora => {
-                            update_register!(self.r_ac = self.r_ac | self.i_opr);
-                        }
-
-                        Asl => {
-                            todo!();
-                        }
-
-                        Lsr => {
-                            todo!();
-                        }
-
-                        Rol => {
-                            todo!();
-                        }
-
+                        // Single byte instructions
                         Clx { flag } => {
                             self.r_ps = self.r_ps.difference(flag);
                         }
@@ -454,6 +364,81 @@ impl<T: MemoryBus> VM<T> {
                             update_register!(self.r_sp = self.r_ix);
                         }
 
+                        Nop => {}
+
+                        // Internal execution on memory data
+                        Adc => {
+                            let value: u16 = (self.r_ac as u16)
+                                + (self.i_opr as u16)
+                                + (self.r_ps.contains(Flags::Carry) as u16);
+                            self.set_flag(Flags::Carry, value > 0xFF);
+                            self.set_flag(
+                                Flags::Overflow,
+                                (self.r_ac & 0x80) == (self.i_opr & 0x80)
+                                    && (self.r_ac & 0x80) != (value as u8 & 0x80),
+                            );
+                            update_register!(self.r_ac = value as u8);
+                        }
+                        Sbc => {
+                            let value: u16 = ((self.r_ac as u16) + (!self.i_opr as u16))
+                                .wrapping_sub(self.r_ps.contains(Flags::Carry) as u16);
+                            self.set_flag(Flags::Carry, value > 0xFF);
+                            self.set_flag(
+                                Flags::Overflow,
+                                (self.r_ac & 0x80) == (self.i_opr & 0x80)
+                                    && (self.r_ac & 0x80) != (value as u8 & 0x80),
+                            );
+                            update_register!(self.r_ac = value as u8);
+                        }
+
+                        And => {
+                            update_register!(self.r_ac = self.r_ac & self.i_opr);
+                        }
+
+                        Bit => {
+                            self.set_flag(Flags::Zero, self.r_ac & self.i_opr != 0);
+                            self.set_flag(
+                                Flags::Negative,
+                                self.i_opr & Flags::Negative.bits() != 0,
+                            );
+                            self.set_flag(
+                                Flags::Overflow,
+                                self.i_opr & Flags::Overflow.bits() != 0,
+                            );
+                        }
+
+                        Cmp => {
+                            let value: u16 = (self.r_ac as u16) + (!self.i_opr as u16);
+                            self.set_flag(Flags::Carry, value > 0xFF);
+                            self.set_flag(
+                                Flags::Overflow,
+                                (self.r_ac & 0x80) == (self.i_opr & 0x80)
+                                    && (self.r_ac & 0x80) != (value as u8 & 0x80),
+                            );
+                        }
+                        Cpx => {
+                            let value: u16 = (self.r_ix as u16) + (!self.i_opr as u16);
+                            self.set_flag(Flags::Carry, value > 0xFF);
+                            self.set_flag(
+                                Flags::Overflow,
+                                (self.r_ix & 0x80) == (self.i_opr & 0x80)
+                                    && (self.r_ix & 0x80) != (value as u8 & 0x80),
+                            );
+                        }
+                        Cpy => {
+                            let value: u16 = (self.r_iy as u16) + (!self.i_opr as u16);
+                            self.set_flag(Flags::Carry, value > 0xFF);
+                            self.set_flag(
+                                Flags::Overflow,
+                                (self.r_iy & 0x80) == (self.i_opr & 0x80)
+                                    && (self.r_iy & 0x80) != (value as u8 & 0x80),
+                            );
+                        }
+
+                        Eor => {
+                            update_register!(self.r_ac = self.r_ac ^ self.i_opr);
+                        }
+
                         Lda => {
                             update_register!(self.r_ac = self.i_opr);
                         }
@@ -464,6 +449,11 @@ impl<T: MemoryBus> VM<T> {
                             update_register!(self.r_iy = self.i_opr);
                         }
 
+                        Ora => {
+                            update_register!(self.r_ac = self.r_ac | self.i_opr);
+                        }
+
+                        // Store operations
                         Sta => {
                             self.io.write_byte(self.i_ab, self.r_ac);
                         }
@@ -474,6 +464,30 @@ impl<T: MemoryBus> VM<T> {
                             self.io.write_byte(self.i_ab, self.r_iy);
                         }
 
+                        // Read-Modify-Write operations
+                        Asl => {
+                            todo!();
+                        }
+
+                        Dec => {
+                            todo!();
+                        }
+                        Inc => {
+                            todo!();
+                        }
+
+                        Lsr => {
+                            todo!();
+                        }
+
+                        Rol => {
+                            todo!();
+                        }
+                        Ror => {
+                            todo!();
+                        }
+
+                        // Miscellaneous operations
                         Bxx { flag, set } => {
                             if self.r_ps.contains(flag) == set {
                                 // TODO: correct cycle count
@@ -481,9 +495,111 @@ impl<T: MemoryBus> VM<T> {
                             }
                         }
 
-                        Nop => {}
+                        Brk => {
+                            todo!();
+                        }
+                        Jmp => {
+                            todo!();
+                        }
+                        Jsr => {
+                            todo!();
+                        }
 
-                        _ => {
+                        Pha => {
+                            todo!();
+                        }
+                        Php => {
+                            todo!();
+                        }
+
+                        Pla => {
+                            todo!();
+                        }
+                        Plp => {
+                            todo!();
+                        }
+
+                        Rti => {
+                            todo!();
+                        }
+                        Rts => {
+                            todo!();
+                        }
+
+                        // Illegal operations
+                        Anc => {
+                            todo!();
+                        }
+
+                        Ane => {
+                            todo!();
+                        }
+
+                        Arr => {
+                            todo!();
+                        }
+
+                        Asr => {
+                            todo!();
+                        }
+
+                        Dcp => {
+                            todo!();
+                        }
+
+                        Isc => {
+                            todo!();
+                        }
+
+                        Las => {
+                            todo!();
+                        }
+
+                        Lax => {
+                            todo!();
+                        }
+
+                        Lxa => {
+                            todo!();
+                        }
+
+                        Rra => {
+                            todo!();
+                        }
+
+                        Rla => {
+                            todo!();
+                        }
+
+                        Sax => {
+                            todo!();
+                        }
+
+                        Sbx => {
+                            todo!();
+                        }
+
+                        Sha => {
+                            todo!();
+                        }
+
+                        Shx => {
+                            todo!();
+                        }
+
+                        Shy => {
+                            todo!();
+                        }
+
+                        Slo => {
+                            todo!();
+                        }
+
+                        Sre => {
+                            todo!();
+                        }
+
+                        Tas => {
                             todo!();
                         }
                     };
