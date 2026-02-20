@@ -57,7 +57,7 @@ fn nestest() -> io::Result<()> {
     }
 
     vm.cold_reset();
-    vm.pc = 0xC000;
+    vm.r_pc = 0xC000;
     vm.r_ps = Flags::from_bits_retain(0x24);
     vm.r_sp = 0xfd;
     vm.cycles = 7;

@@ -10,27 +10,25 @@ use effnes_cpu::{
 /// 6502 Virtual Machine
 pub struct VM {
     /// The program counter.
-    pub pc: u16,
+    r_pc: u16,
 
     /// The X register.
-    pub x: u8,
+    r_ix: u8,
     /// The Y register.
-    pub y: u8,
+    r_iy: u8,
     /// The Accumulator register.
-    pub a: u8,
+    r_ac: u8,
     /// The stack pointer register.
-    pub r_sp: u8,
+    r_sp: u8,
     /// The program status register.
-    pub r_ps: Flags,
+    r_ps: Flags,
 
     /// An internal flag used for validating an execution (checking that the code didn't halt).
-    pub h: u8,
-    /// An internal flag used for halting the CPU while it's running (by the memory bus).
-    pub ex_interrupt: u8,
+    i_hl: u8,
     /// The CPU cycle count.
-    pub cycles: usize,
+    i_cc: usize,
     // A magic constant involved in highly unstable opcodes.
-    pub magic: u8,
+    magic: u8,
 }
 
 impl VM {
@@ -44,14 +42,14 @@ impl VM {
     }
 
     fn next_byte(&mut self, io: &mut impl MemoryBus) -> u8 {
-        let out: u8 = io.read_u8(self.pc);
-        self.pc = self.pc.wrapping_add(1);
+        let out: u8 = io.read_u8(self.r_pc);
+        self.r_pc = self.r_pc.wrapping_add(1);
         out
     }
 
     fn next_addr(&mut self, io: &mut impl MemoryBus) -> u16 {
-        let out: u16 = io.read_u16(self.pc);
-        self.pc = self.pc.wrapping_add(2);
+        let out: u16 = io.read_u16(self.r_pc);
+        self.r_pc = self.r_pc.wrapping_add(2);
         out
     }
 
@@ -108,15 +106,14 @@ impl VM {
 impl Default for VM {
     fn default() -> Self {
         Self {
-            pc: 0x8000,
-            x: 0,
-            y: 0,
-            a: 0,
+            r_pc: 0x8000,
+            r_ix: 0,
+            r_iy: 0,
+            r_ac: 0,
             r_sp: 0,
             r_ps: Flags::empty(),
-            h: 0,
-            ex_interrupt: 0,
-            cycles: 0,
+            i_hl: 0,
+            i_cc: 0,
             magic: 0xFE,
         }
     }
@@ -127,12 +124,12 @@ impl Peripheral for VM {
 
     fn cold_reset(&mut self) {
         self.r_ps = Flags::empty();
-        self.a = 0;
-        self.x = 0;
-        self.y = 0;
+        self.r_ac = 0;
+        self.r_ix = 0;
+        self.r_iy = 0;
 
         self.r_sp = 0x00;
-        self.pc = CpuVector::Rst as u16;
+        self.r_pc = CpuVector::Rst as u16;
 
         self.warm_reset();
     }
@@ -238,14 +235,14 @@ impl Peripheral for VM {
         use IndexRegister::*;
         match am {
             Immediate => {
-                t_addr = self.pc;
-                self.pc += 1;
+                t_addr = self.r_pc;
+                self.r_pc += 1;
             }
 
             Relative => {
                 t_byte1 = self.next_byte(io);
-                t_addr = self.pc.wrapping_add_signed((t_byte1 as i8) as i16);
-                t_byte1 = if (t_addr & 0xff00) != (self.pc & 0xff00) {
+                t_addr = self.r_pc.wrapping_add_signed((t_byte1 as i8) as i16);
+                t_byte1 = if (t_addr & 0xff00) != (self.r_pc & 0xff00) {
                     1
                 } else {
                     0
@@ -272,49 +269,49 @@ impl Peripheral for VM {
 
             AbsoluteI(X) => {
                 t_addr = self.next_addr(io);
-                if ((t_addr.wrapping_add(self.x as u16)) & 0xff00) != (t_addr & 0xff00) {
+                if ((t_addr.wrapping_add(self.r_ix as u16)) & 0xff00) != (t_addr & 0xff00) {
                     timing += 1;
                 }
 
-                t_addr += self.x as u16;
+                t_addr += self.r_ix as u16;
             }
 
             AbsoluteI(Y) => {
                 t_addr = self.next_addr(io);
-                if ((t_addr.wrapping_add(self.y as u16)) & 0xff00) != (t_addr & 0xff00) {
+                if ((t_addr.wrapping_add(self.r_iy as u16)) & 0xff00) != (t_addr & 0xff00) {
                     timing += 1;
                 }
 
-                t_addr = t_addr.wrapping_add(self.y as u16);
+                t_addr = t_addr.wrapping_add(self.r_iy as u16);
             }
 
             ZeroPageI(X) => {
                 t_byte1 = self.next_byte(io);
-                t_addr = t_byte1.wrapping_add_signed(self.x as i8) as u16;
+                t_addr = t_byte1.wrapping_add_signed(self.r_ix as i8) as u16;
             }
 
             ZeroPageI(Y) => {
                 t_byte1 = self.next_byte(io);
-                t_addr = t_byte1.wrapping_add_signed(self.y as i8) as u16;
+                t_addr = t_byte1.wrapping_add_signed(self.r_iy as i8) as u16;
             }
 
             IndirectI(X) => {
                 t_byte1 = self.next_byte(io);
-                t_addr = ((io.read_u8(t_byte1.wrapping_add_signed((self.x as i8) + 1) as u16)
+                t_addr = ((io.read_u8(t_byte1.wrapping_add_signed((self.r_ix as i8) + 1) as u16)
                     as u16)
                     << 8)
-                    + (io.read_u8(t_byte1.wrapping_add_signed(self.x as i8) as u16) as u16);
+                    + (io.read_u8(t_byte1.wrapping_add_signed(self.r_ix as i8) as u16) as u16);
             }
 
             IndirectI(Y) => {
                 t_byte1 = self.next_byte(io);
                 t_addr = io.read_u8(t_byte1 as u16) as u16;
                 t_addr += (io.read_u8(t_byte1.wrapping_add(1) as u16) as u16) << 8;
-                if ((t_addr.wrapping_add(self.y as u16)) & 0xff00) != (t_addr & 0xff00) {
+                if ((t_addr.wrapping_add(self.r_iy as u16)) & 0xff00) != (t_addr & 0xff00) {
                     timing += 1;
                 }
 
-                t_addr = t_addr.wrapping_add(self.y as u16);
+                t_addr = t_addr.wrapping_add(self.r_iy as u16);
             }
 
             _ => {
@@ -327,58 +324,58 @@ impl Peripheral for VM {
         match mne {
             // Memory / Registers
             Lda => {
-                self.a = io.read_u8(t_addr);
-                self.set_nz_flags(self.a);
+                self.r_ac = io.read_u8(t_addr);
+                self.set_nz_flags(self.r_ac);
             }
 
             Ldx => {
-                self.x = io.read_u8(t_addr);
-                self.set_nz_flags(self.x);
+                self.r_ix = io.read_u8(t_addr);
+                self.set_nz_flags(self.r_ix);
             }
 
             Ldy => {
-                self.y = io.read_u8(t_addr);
-                self.set_nz_flags(self.y);
+                self.r_iy = io.read_u8(t_addr);
+                self.set_nz_flags(self.r_iy);
             }
 
-            Sta => io.write_u8(t_addr, self.a),
+            Sta => io.write_u8(t_addr, self.r_ac),
 
-            Stx => io.write_u8(t_addr, self.x),
+            Stx => io.write_u8(t_addr, self.r_ix),
 
-            Sty => io.write_u8(t_addr, self.y),
+            Sty => io.write_u8(t_addr, self.r_iy),
 
             Tax => {
-                self.x = self.a;
-                self.set_nz_flags(self.a);
+                self.r_ix = self.r_ac;
+                self.set_nz_flags(self.r_ac);
             }
 
             Tay => {
-                self.y = self.a;
-                self.set_nz_flags(self.a);
+                self.r_iy = self.r_ac;
+                self.set_nz_flags(self.r_ac);
             }
 
             Tsx => {
-                self.x = self.r_sp;
+                self.r_ix = self.r_sp;
                 self.set_nz_flags(self.r_sp);
             }
 
             Txa => {
-                self.a = self.x;
-                self.set_nz_flags(self.x);
+                self.r_ac = self.r_ix;
+                self.set_nz_flags(self.r_ix);
             }
 
             Txs => {
-                self.r_sp = self.x;
+                self.r_sp = self.r_ix;
             }
 
             Tya => {
-                self.a = self.y;
-                self.set_nz_flags(self.y);
+                self.r_ac = self.r_iy;
+                self.set_nz_flags(self.r_iy);
             }
 
             // Stack
             Pha => {
-                self.stack_push_byte(io, self.a);
+                self.stack_push_byte(io, self.r_ac);
             }
 
             Php => {
@@ -386,8 +383,8 @@ impl Peripheral for VM {
             }
 
             Pla => {
-                self.a = self.stack_pop_byte(io);
-                self.set_nz_flags(self.a);
+                self.r_ac = self.stack_pop_byte(io);
+                self.set_nz_flags(self.r_ac);
             }
 
             Plp => {
@@ -405,13 +402,13 @@ impl Peripheral for VM {
             }
 
             Dex => {
-                self.x = self.x.wrapping_sub(1);
-                self.set_nz_flags(self.x);
+                self.r_ix = self.r_ix.wrapping_sub(1);
+                self.set_nz_flags(self.r_ix);
             }
 
             Dey => {
-                self.y = self.y.wrapping_sub(1);
-                self.set_nz_flags(self.y);
+                self.r_iy = self.r_iy.wrapping_sub(1);
+                self.set_nz_flags(self.r_iy);
             }
 
             Inc => {
@@ -421,62 +418,64 @@ impl Peripheral for VM {
             }
 
             Inx => {
-                self.x = self.x.wrapping_add(1);
-                self.set_nz_flags(self.x);
+                self.r_ix = self.r_ix.wrapping_add(1);
+                self.set_nz_flags(self.r_ix);
             }
 
             Iny => {
-                self.y = self.y.wrapping_add(1);
-                self.set_nz_flags(self.y);
+                self.r_iy = self.r_iy.wrapping_add(1);
+                self.set_nz_flags(self.r_iy);
             }
 
             // Arithmetic
             Sbc => {
                 // Pseudo-Composite
                 t_byte1 = !io.read_u8(t_addr);
-                t_addr =
-                    (self.a as u16) + (t_byte1 as u16) + (self.r_ps.contains(Flags::Carry) as u16);
+                t_addr = (self.r_ac as u16)
+                    + (t_byte1 as u16)
+                    + (self.r_ps.contains(Flags::Carry) as u16);
                 self.set_flag(Flags::Carry, t_addr > 0xFF);
                 self.set_flag(
                     Flags::Overflow,
-                    (!(self.a ^ t_byte1) & (self.a ^ (t_addr as u8))) & 0x80 != 0,
+                    (!(self.r_ac ^ t_byte1) & (self.r_ac ^ (t_addr as u8))) & 0x80 != 0,
                 );
-                self.a = t_addr as u8;
-                self.set_nz_flags(self.a);
+                self.r_ac = t_addr as u8;
+                self.set_nz_flags(self.r_ac);
             }
 
             Adc => {
                 t_byte1 = io.read_u8(t_addr);
-                t_addr =
-                    (self.a as u16) + (t_byte1 as u16) + (self.r_ps.contains(Flags::Carry) as u16);
+                t_addr = (self.r_ac as u16)
+                    + (t_byte1 as u16)
+                    + (self.r_ps.contains(Flags::Carry) as u16);
                 self.set_flag(Flags::Carry, t_addr > 0xFF);
                 self.set_flag(
                     Flags::Overflow,
-                    (!(self.a ^ t_byte1) & (self.a ^ (t_addr as u8))) & 0x80 != 0,
+                    (!(self.r_ac ^ t_byte1) & (self.r_ac ^ (t_addr as u8))) & 0x80 != 0,
                 );
-                self.a = t_addr as u8;
-                self.set_nz_flags(self.a);
+                self.r_ac = t_addr as u8;
+                self.set_nz_flags(self.r_ac);
             }
 
             And => {
-                self.a &= io.read_u8(t_addr);
-                self.set_nz_flags(self.a);
+                self.r_ac &= io.read_u8(t_addr);
+                self.set_nz_flags(self.r_ac);
             }
 
             Eor => {
-                self.a ^= io.read_u8(t_addr);
-                self.set_nz_flags(self.a);
+                self.r_ac ^= io.read_u8(t_addr);
+                self.set_nz_flags(self.r_ac);
             }
 
             Ora => {
-                self.a |= io.read_u8(t_addr);
-                self.set_nz_flags(self.a);
+                self.r_ac |= io.read_u8(t_addr);
+                self.set_nz_flags(self.r_ac);
             }
 
             // Shift / Rotate
             Asl => {
                 t_byte1 = if am == Implied {
-                    self.a
+                    self.r_ac
                 } else {
                     io.read_u8(t_addr)
                 };
@@ -485,7 +484,7 @@ impl Peripheral for VM {
                 t_byte1 <<= 1;
 
                 if am == Implied {
-                    self.a = t_byte1;
+                    self.r_ac = t_byte1;
                 } else {
                     io.write_u8(t_addr, t_byte1);
                 }
@@ -495,7 +494,7 @@ impl Peripheral for VM {
 
             Lsr => {
                 t_byte1 = if am == Implied {
-                    self.a
+                    self.r_ac
                 } else {
                     io.read_u8(t_addr)
                 };
@@ -504,7 +503,7 @@ impl Peripheral for VM {
                 t_byte1 >>= 1;
 
                 if am == Implied {
-                    self.a = t_byte1;
+                    self.r_ac = t_byte1;
                 } else {
                     io.write_u8(t_addr, t_byte1);
                 }
@@ -514,7 +513,7 @@ impl Peripheral for VM {
 
             Rol => {
                 t_byte1 = if am == Implied {
-                    self.a
+                    self.r_ac
                 } else {
                     io.read_u8(t_addr)
                 };
@@ -525,7 +524,7 @@ impl Peripheral for VM {
                 t_byte1 = t_byte1.wrapping_add(t_byte2);
 
                 if am == Implied {
-                    self.a = t_byte1;
+                    self.r_ac = t_byte1;
                 } else {
                     io.write_u8(t_addr, t_byte1);
                 }
@@ -535,7 +534,7 @@ impl Peripheral for VM {
 
             Ror => {
                 t_byte1 = if am == Implied {
-                    self.a
+                    self.r_ac
                 } else {
                     io.read_u8(t_addr)
                 };
@@ -546,7 +545,7 @@ impl Peripheral for VM {
                 t_byte1 = t_byte1.wrapping_add(if t_byte2 == 1 { 0x80 } else { 0 });
 
                 if am == Implied {
-                    self.a = t_byte1;
+                    self.r_ac = t_byte1;
                 } else {
                     io.write_u8(t_addr, t_byte1);
                 }
@@ -566,51 +565,51 @@ impl Peripheral for VM {
             // Comparisons
             Cmp => {
                 t_byte1 = io.read_u8(t_addr);
-                self.set_flag(Flags::Carry, self.a >= t_byte1);
-                self.set_nz_flags(self.a.wrapping_sub(t_byte1));
+                self.set_flag(Flags::Carry, self.r_ac >= t_byte1);
+                self.set_nz_flags(self.r_ac.wrapping_sub(t_byte1));
             }
 
             Cpx => {
                 t_byte1 = io.read_u8(t_addr);
-                self.set_flag(Flags::Carry, self.x >= t_byte1);
-                self.set_nz_flags(self.x.wrapping_sub(t_byte1));
+                self.set_flag(Flags::Carry, self.r_ix >= t_byte1);
+                self.set_nz_flags(self.r_ix.wrapping_sub(t_byte1));
             }
 
             Cpy => {
                 t_byte1 = io.read_u8(t_addr);
-                self.set_flag(Flags::Carry, self.y >= t_byte1);
-                self.set_nz_flags(self.y.wrapping_sub(t_byte1));
+                self.set_flag(Flags::Carry, self.r_iy >= t_byte1);
+                self.set_nz_flags(self.r_iy.wrapping_sub(t_byte1));
             }
 
             // Conditional
             Bxx { flag, set } => {
                 if self.r_ps.contains(flag) == set {
                     timing += 1 + t_byte1;
-                    self.pc = t_addr;
+                    self.r_pc = t_addr;
                 }
             }
 
             // Jumps / Subroutines
             Jmp => {
-                self.pc = t_addr;
+                self.r_pc = t_addr;
             }
 
             Jsr => {
-                self.pc = self.pc.wrapping_sub(1);
-                self.stack_push_addr(io, self.pc);
-                self.pc = t_addr;
+                self.r_pc = self.r_pc.wrapping_sub(1);
+                self.stack_push_addr(io, self.r_pc);
+                self.r_pc = t_addr;
             }
 
             Rts => {
-                self.pc = self.stack_pop_addr(io).wrapping_add(1);
+                self.r_pc = self.stack_pop_addr(io).wrapping_add(1);
             }
 
             // Interrupts
             Brk => {
-                self.stack_push_addr(io, self.pc.wrapping_add(1));
+                self.stack_push_addr(io, self.r_pc.wrapping_add(1));
                 self.stack_push_byte(io, (self.r_ps | Flags::Break).bits());
                 self.r_ps = self.r_ps.union(Flags::IntDis);
-                self.pc = io.read_u16(CpuVector::Brk as u16);
+                self.r_pc = io.read_u16(CpuVector::Brk as u16);
             }
 
             Rti => {
@@ -618,12 +617,12 @@ impl Peripheral for VM {
                     (self.stack_pop_byte(io) & !(<Flags as Into<u8>>::into(Flags::Break)))
                         | (<Flags as Into<u8>>::into(Flags::Reserved)),
                 );
-                self.pc = self.stack_pop_addr(io);
+                self.r_pc = self.stack_pop_addr(io);
             }
 
             Bit => {
                 t_byte1 = io.read_u8(t_addr);
-                t_byte2 = self.a & t_byte1;
+                t_byte2 = self.r_ac & t_byte1;
                 self.set_nz_flags(t_byte2);
                 self.set_flag(Flags::Overflow, t_byte2 & 0x40 != 0);
                 self.r_ps = Flags::from_bits_retain(
@@ -636,31 +635,31 @@ impl Peripheral for VM {
             // Illegal Opcodes
             Asr => {
                 // AND code
-                self.a &= io.read_u8(t_addr);
-                self.set_flag(Flags::Carry, self.a & 1 != 0);
-                self.a >>= 1;
-                self.set_nz_flags(self.a);
+                self.r_ac &= io.read_u8(t_addr);
+                self.set_flag(Flags::Carry, self.r_ac & 1 != 0);
+                self.r_ac >>= 1;
+                self.set_nz_flags(self.r_ac);
             }
 
             Anc => {
-                self.a &= io.read_u8(t_addr);
-                self.set_flag(Flags::Carry, self.a & 0x80 != 0);
-                self.set_nz_flags(self.a);
+                self.r_ac &= io.read_u8(t_addr);
+                self.set_flag(Flags::Carry, self.r_ac & 0x80 != 0);
+                self.set_nz_flags(self.r_ac);
             }
 
             Ane => {
-                self.a &= self.magic & self.x & io.read_u8(t_addr);
-                self.set_nz_flags(self.a);
+                self.r_ac &= self.magic & self.r_ix & io.read_u8(t_addr);
+                self.set_nz_flags(self.r_ac);
             }
 
             Arr => {
-                self.a = ((self.a & io.read_u8(t_addr)) >> 1)
+                self.r_ac = ((self.r_ac & io.read_u8(t_addr)) >> 1)
                     | ((self.r_ps.contains(Flags::Carry) as u8) << 7);
-                self.set_nz_flags(self.a);
-                self.set_flag(Flags::Carry, self.a & 0x40 != 0);
+                self.set_nz_flags(self.r_ac);
+                self.set_flag(Flags::Carry, self.r_ac & 0x40 != 0);
                 self.set_flag(
                     Flags::Overflow,
-                    (self.a & 0x40) ^ ((self.a & 0x20) << 1) != 0,
+                    (self.r_ac & 0x40) ^ ((self.r_ac & 0x20) << 1) != 0,
                 );
             }
 
@@ -671,8 +670,8 @@ impl Peripheral for VM {
                 io.write_u8(t_addr, t_byte1);
 
                 // CMP code
-                self.set_flag(Flags::Carry, self.a >= t_byte1);
-                self.set_nz_flags(self.a.wrapping_sub(t_byte1));
+                self.set_flag(Flags::Carry, self.r_ac >= t_byte1);
+                self.set_nz_flags(self.r_ac.wrapping_sub(t_byte1));
             }
 
             // INC + SBC
@@ -683,29 +682,30 @@ impl Peripheral for VM {
 
                 // SBC code
                 t_byte1 = !t_byte1;
-                t_addr =
-                    (self.a as u16) + (t_byte1 as u16) + (self.r_ps.contains(Flags::Carry) as u16);
+                t_addr = (self.r_ac as u16)
+                    + (t_byte1 as u16)
+                    + (self.r_ps.contains(Flags::Carry) as u16);
                 self.set_flag(Flags::Carry, t_addr > 0xFF);
                 self.set_flag(
                     Flags::Overflow,
-                    (!(self.a ^ t_byte1) & (self.a ^ (t_addr as u8))) & 0x80 != 0,
+                    (!(self.r_ac ^ t_byte1) & (self.r_ac ^ (t_addr as u8))) & 0x80 != 0,
                 );
-                self.a = t_addr as u8;
-                self.set_nz_flags(self.a);
+                self.r_ac = t_addr as u8;
+                self.set_nz_flags(self.r_ac);
             }
 
             Las => {
                 self.r_sp = io.read_u8(t_addr) & self.r_sp;
-                self.a = self.r_sp;
-                self.x = self.r_sp;
+                self.r_ac = self.r_sp;
+                self.r_ix = self.r_sp;
                 self.set_nz_flags(self.r_sp);
             }
 
             // LDA + LDX
             Lax => {
-                self.a = io.read_u8(t_addr);
-                self.x = self.a;
-                self.set_nz_flags(self.a);
+                self.r_ac = io.read_u8(t_addr);
+                self.r_ix = self.r_ac;
+                self.set_nz_flags(self.r_ac);
             }
 
             // ROL + AND
@@ -719,8 +719,8 @@ impl Peripheral for VM {
                 io.write_u8(t_addr, t_byte1);
 
                 // AND code
-                self.a &= t_byte1;
-                self.set_nz_flags(self.a);
+                self.r_ac &= t_byte1;
+                self.set_nz_flags(self.r_ac);
             }
 
             // ROR + ADC
@@ -734,53 +734,55 @@ impl Peripheral for VM {
                 io.write_u8(t_addr, t_byte1);
 
                 // ADC code
-                t_addr =
-                    (self.a as u16) + (t_byte1 as u16) + (self.r_ps.contains(Flags::Carry) as u16);
+                t_addr = (self.r_ac as u16)
+                    + (t_byte1 as u16)
+                    + (self.r_ps.contains(Flags::Carry) as u16);
                 self.set_flag(Flags::Carry, t_addr > 0xFF);
                 self.set_flag(
                     Flags::Overflow,
-                    (!(self.a ^ t_byte1) & (self.a ^ (t_addr as u8))) & 0x80 != 0,
+                    (!(self.r_ac ^ t_byte1) & (self.r_ac ^ (t_addr as u8))) & 0x80 != 0,
                 );
-                self.a = t_addr as u8;
-                self.set_nz_flags(self.a);
+                self.r_ac = t_addr as u8;
+                self.set_nz_flags(self.r_ac);
             }
 
             // S(Accumulator & X register)
             Sax => {
-                io.write_u8(t_addr, self.a & self.x);
+                io.write_u8(t_addr, self.r_ac & self.r_ix);
             }
 
             Sbx => {
-                self.x &= self.a;
-                t_addr = (self.x as u16).wrapping_sub(io.read_u8(t_addr) as u16);
+                self.r_ix &= self.r_ac;
+                t_addr = (self.r_ix as u16).wrapping_sub(io.read_u8(t_addr) as u16);
                 self.set_flag(Flags::Carry, t_addr < 0x100);
-                self.x = t_addr as u8;
-                self.set_nz_flags(self.x);
+                self.r_ix = t_addr as u8;
+                self.set_nz_flags(self.r_ix);
             }
 
             Sha => {
                 t_byte1 = match am {
                     // TODO: Only read one bit
                     AbsoluteI(Y) => {
-                        ((io.read_u16(self.pc.wrapping_sub(2)) >> 8) as u8).wrapping_add(1)
+                        ((io.read_u16(self.r_pc.wrapping_sub(2)) >> 8) as u8).wrapping_add(1)
                     }
                     ZeroPageI(Y) => {
-                        t_byte1 = io.read_u8(self.pc.wrapping_sub(1)).wrapping_add(1);
+                        t_byte1 = io.read_u8(self.r_pc.wrapping_sub(1)).wrapping_add(1);
                         io.read_u8(t_byte1 as u16)
                     }
                     _ => {
-                        self.h = 1;
+                        self.i_hl = 1;
                         return;
                     }
                 };
 
-                io.write_u8(t_addr, self.a & self.x & t_byte1);
+                io.write_u8(t_addr, self.r_ac & self.r_ix & t_byte1);
             }
 
             Shx | Shy => {
                 // TODO: Only read one byte
-                t_byte2 = io.read_u8(self.pc.wrapping_sub(1));
-                t_byte1 = t_byte2.wrapping_add(1) & (if mne == Shx { self.x } else { self.y });
+                t_byte2 = io.read_u8(self.r_pc.wrapping_sub(1));
+                t_byte1 =
+                    t_byte2.wrapping_add(1) & (if mne == Shx { self.r_ix } else { self.r_iy });
 
                 if t_byte2 != ((t_addr >> 8) as u8) {
                     t_addr = (t_addr & 0xff) | ((t_byte1 as u16) << 8).wrapping_add(1);
@@ -798,8 +800,8 @@ impl Peripheral for VM {
                 io.write_u8(t_addr, t_byte1);
 
                 // ORA code
-                self.a |= io.read_u8(t_addr);
-                self.set_nz_flags(self.a);
+                self.r_ac |= io.read_u8(t_addr);
+                self.set_nz_flags(self.r_ac);
             }
 
             // LSR + EOR
@@ -811,27 +813,27 @@ impl Peripheral for VM {
                 io.write_u8(t_addr, t_byte1);
 
                 // EOR code
-                self.a ^= t_byte1;
-                self.set_nz_flags(self.a);
+                self.r_ac ^= t_byte1;
+                self.set_nz_flags(self.r_ac);
             }
 
             Tas => {
                 // TODO: Only read one byte
-                self.r_sp = self.a & self.x;
+                self.r_sp = self.r_ac & self.r_ix;
                 // TODO: Remove extra var
-                let ex = ((io.read_u16(self.pc.wrapping_sub(2)) >> 8) as u8).wrapping_add(1);
+                let ex = ((io.read_u16(self.r_pc.wrapping_sub(2)) >> 8) as u8).wrapping_add(1);
                 io.write_u8(t_addr, self.r_sp & ex);
             }
 
             Jam => {
-                self.h = 1;
+                self.i_hl = 1;
             }
 
             _ => todo!(),
         }
 
         let cycle_expr: u8 = 1 + base_timing + if timing > 0 { timing - 1 } else { 0 };
-        self.cycles += cycle_expr as usize;
+        self.i_cc += cycle_expr as usize;
     }
 }
 
@@ -842,93 +844,14 @@ impl InspectCpu for VM {
 
     fn state(&self) -> CpuState {
         CpuState {
-            pc: self.pc,
+            pc: self.r_pc,
             sp: self.r_sp,
-            ac: self.a,
-            ix: self.x,
-            iy: self.y,
+            ac: self.r_ac,
+            ix: self.r_ix,
+            iy: self.r_iy,
             am: effnes_cpu::addr::AddressingMode::Implied,
             ps: self.r_ps,
-            cc: self.cycles,
+            cc: self.i_cc,
         }
     }
 }
-
-// impl<T: MemoryBus + InspectBus> fmt::Display for VM<T> {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-//         // AB CD EF `MNE args`
-
-//         let opcode = io.peek_u8(self.pc);
-//         let internal_repr: u16 = consts::TRANSLATION_TABLE[opcode as usize];
-//         let raw_internal_opcode: u8 = (internal_repr >> 8) as u8;
-//         let raw_address_mode: u8 = ((internal_repr >> 4) & 0b1111) as u8;
-
-//         write!(f, "VM[{:2x}", opcode)?;
-
-//         let address_mode = match consts::AddrMode::try_from(raw_address_mode) {
-//             Ok(result) => result,
-//             Err(_) => {
-//                 write!(f, ", INVALID_ADDR_MODE]")?;
-//                 return Ok(());
-//             }
-//         };
-
-//         let print;
-//         let length;
-//         let pc = self.pc.wrapping_add(1);
-
-//         (print, length) = match address_mode {
-//             consts::AddrMode::Immediate => (format!("#${:02x}", io.peek_u8(pc)), 1),
-//             consts::AddrMode::Relative => (
-//                 format!(
-//                     "${:04x}",
-//                     self.pc
-//                         .wrapping_add(2)
-//                         .wrapping_add_signed((io.peek_u8(pc) as i8) as i16)
-//                 ),
-//                 1,
-//             ),
-
-//             consts::AddrMode::Absolute => (format!("${:04x}", io.peek_u16(pc)), 2),
-
-//             consts::AddrMode::Indirect => (format!("(${:04x})", io.peek_u16(pc)), 2),
-//             consts::AddrMode::ZeroPage => (format!("${:02x}", io.peek_u8(pc)), 1),
-//             consts::AddrMode::ZeroPageX => (format!("${:02x},X", io.peek_u8(pc)), 1),
-//             consts::AddrMode::ZeroPageY => (format!("${:02x},Y", io.peek_u8(pc)), 1),
-//             consts::AddrMode::AbsoluteX => (format!("${:04x},X", io.peek_u16(pc)), 2),
-//             consts::AddrMode::AbsoluteY => (format!("${:04x},Y", io.peek_u16(pc)), 2),
-//             consts::AddrMode::IndirectX => (format!("(${:02x},X)", io.peek_u16(pc)), 1),
-//             consts::AddrMode::IndirectY => (format!("(${:02x}),Y", io.peek_u16(pc)), 1),
-//             consts::AddrMode::Accumulator => ("A".to_string(), 0),
-//             consts::AddrMode::Implied => ("".to_string(), 0),
-//         };
-
-//         for x in 0..length {
-//             write!(f, " {:2x}", io.peek_u8(pc.wrapping_add(x)))?;
-//         }
-
-//         for _ in length..2 {
-//             write!(f, "   ")?;
-//         }
-
-//         write!(
-//             f,
-//             " | {} {}",
-//             consts::MNEMONICS_TABLE[raw_internal_opcode as usize],
-//             print
-//         )?;
-
-//         for _ in (4 + print.len())..14 {
-//             write!(f, " ")?;
-//         }
-
-//         write!(
-//             f,
-//             "| A:{:02x} X:{:02x} Y:{:02x} S:{:02x} P:{:02x}] | PC:{:04x} CYC:{}",
-//             self.a, self.x, self.y, self.s, self.p, self.pc, self.cycles
-//         )?;
-
-//         // TODO: Address Inspection
-//         Ok(())
-//     }
-// }
