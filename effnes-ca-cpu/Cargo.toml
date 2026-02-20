@@ -1,5 +1,5 @@
 [package]
-name = "effnes-cycle-accurate-cpu"
+name = "effnes-ca-cpu"
 version = "0.1.0"
 edition = "2024"
 
