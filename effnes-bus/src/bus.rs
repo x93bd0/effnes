@@ -1,30 +1,28 @@
 /// Memory Bus
 pub trait MemoryBus {
-    /// Should read a byte from a certain address and return it.
-    fn read_byte(&mut self, addr: u16) -> u8;
+    /// Reads a byte from `addr`.
+    ///
+    /// Implementations may perform side effects (e.g., MMIO behavior).
+    fn read_u8(&mut self, addr: u16) -> u8;
 
-    /// Should write a byte to a certain address.
-    fn write_byte(&mut self, addr: u16, data: u8);
+    /// Reads an address from `addr`.
+    ///
+    /// Implementations may perform side effects (e.g., MMIO behavior).
+    fn read_u16(&mut self, addr: u16) -> u16;
+
+    /// Writes `data` into `addr`.
+    fn write_u8(&mut self, addr: u16, data: u8);
 }
 
-pub struct BasicMemory {
-    memory: [u8; 65536],
-}
+/// Inspect Bus
+pub trait InspectBus {
+    /// Reads a byte from `addr`.
+    ///
+    /// This must not mutate the bus or peripheral state.
+    fn peek_u8(&self, addr: u16) -> u8;
 
-impl BasicMemory {
-    pub fn default_with(value: u8) -> Self {
-        let memory = [value; 65536];
-        // TODO: Set up vectors
-        Self { memory }
-    }
-}
-
-impl MemoryBus for BasicMemory {
-    fn read_byte(&mut self, addr: u16) -> u8 {
-        return self.memory[addr as usize];
-    }
-
-    fn write_byte(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
-    }
+    /// Reads an address from `{addr + 1}{addr}`.
+    ///
+    /// This must not mutate the bus or peripheral state.
+    fn peek_u16(&self, addr: u16) -> u16;
 }

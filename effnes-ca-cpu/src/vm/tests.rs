@@ -1,6 +1,6 @@
 use super::*;
 use AddressResolverState::*;
-use effnes_bus::basic::BasicMemory;
+use effnes_bus::{MemoryBus, basic::BasicMemory};
 
 const NOP_IMP: u8 = 0xEA;
 const LDA_IMM: u8 = 0xA9;
@@ -28,21 +28,19 @@ struct Status {
     nst: Option<State>,
 }
 
-fn get_vm() -> VM<BasicMemory> {
-    let mut vm = VM::new(BasicMemory::default_with(JAM));
-    vm.r_pc = 0xF000;
-    vm
+fn get_vm() -> (BasicMemory, VM) {
+    (BasicMemory::default_with(JAM), VM::default())
 }
 
 macro_rules! setup_memory {
         (
-            $vm:ident {
+            $io:ident + $vm:ident {
                 $( $i:expr => $j:expr ),*
             }
             $([ $( $reg:ident => $val: expr ),* ])?
         ) => {
             $(
-                $vm.io.write_u8($i, $j);
+                $io.write_u8($i, $j);
             )*
 
             $(
@@ -108,18 +106,18 @@ macro_rules! modify_state {
     }
 
 macro_rules! assert_execution_eq {
-        ($vm:ident, $st:ident, {$( ($($item:tt)+) )+}) => {
+        ($io:expr, $vm:ident, $st:ident, {$( ($($item:tt)+) )+}) => {
             $(
-                assert_execution_eq!($vm, $st, $($item)+);
+                assert_execution_eq!($io, $vm, $st, $($item)+);
             )+
         };
 
-        ($vm:ident, $st:ident, cycle $bl:tt) => {
+        ($io:expr, $vm:ident, $st:ident, cycle $bl:tt) => {
             modify_state!($st $bl);
-            $vm.cycle();
+            $vm.cycle(&mut $io);
         };
 
-        ($vm:ident, $st:ident, =) => {
+        ($io:expr, $vm:ident, $st:ident, =) => {
             assert_status!($vm, $st);
             if let Some(ref mut t) = $st.t {
                 *t += 1;
@@ -127,9 +125,9 @@ macro_rules! assert_execution_eq {
         };
     }
 
-fn assert_next_instr_is_nop(vm: &mut VM<BasicMemory>, st: &mut Status) {
+fn assert_next_instr_is_nop(io: &mut BasicMemory, vm: &mut VM, st: &mut Status) {
     let pc = vm.r_pc.wrapping_add(1);
-    assert_execution_eq!(vm, st, {
+    assert_execution_eq!((*io), vm, st, {
         (cycle {
             t => 0,
             pc => (pc + 1),
@@ -147,16 +145,16 @@ fn assert_next_instr_is_nop(vm: &mut VM<BasicMemory>, st: &mut Status) {
 #[test]
 fn test_imm_addressing() {
     for data in 0..=255 {
-        let mut vm = get_vm();
+        let (mut io, mut vm) = get_vm();
         let mut st = Status::default();
-        setup_memory!(vm {
+        setup_memory!(io + vm {
             vm.r_pc.wrapping_add(1) => LDA_IMM,
             vm.r_pc.wrapping_add(2) => data,
             vm.r_pc.wrapping_add(3) => NOP_IMP
         });
 
         let pc = vm.r_pc.wrapping_add(1);
-        assert_execution_eq!(vm, st, {
+        assert_execution_eq!(io, vm, st, {
             (cycle {
                 t => 0,
                 pc => pc + 1,
@@ -172,8 +170,8 @@ fn test_imm_addressing() {
             }) (=)
         });
 
-        assert_next_instr_is_nop(&mut vm, &mut st);
-        setup_memory!(vm {
+        assert_next_instr_is_nop(&mut io, &mut vm, &mut st);
+        setup_memory!(io + vm {
                 vm.r_pc.wrapping_add(1) => JAM,
                 vm.r_pc.wrapping_add(2) => JAM,
                 vm.r_pc.wrapping_add(3) => JAM
@@ -184,9 +182,9 @@ fn test_imm_addressing() {
 #[test]
 fn test_zp_addressing() {
     for data in 0..=255 {
-        let mut vm = get_vm();
+        let (mut io, mut vm) = get_vm();
         let mut st = Status::default();
-        setup_memory!(vm {
+        setup_memory!(io + vm {
             vm.r_pc.wrapping_add(1) => LDA_ZPG,
             vm.r_pc.wrapping_add(2) => data,
             vm.r_pc.wrapping_add(3) => NOP_IMP,
@@ -194,7 +192,7 @@ fn test_zp_addressing() {
         });
 
         let pc = vm.r_pc.wrapping_add(1);
-        assert_execution_eq!(vm, st, {
+        assert_execution_eq!(io, vm, st, {
             (cycle {
                 t => 0,
                 pc => pc + 1,
@@ -214,8 +212,8 @@ fn test_zp_addressing() {
             }) (=)
         });
 
-        assert_next_instr_is_nop(&mut vm, &mut st);
-        setup_memory!(vm {
+        assert_next_instr_is_nop(&mut io, &mut vm, &mut st);
+        setup_memory!(io + vm {
                 vm.r_pc.wrapping_add(1) => JAM,
                 vm.r_pc.wrapping_add(2) => JAM,
                 vm.r_pc.wrapping_add(3) => JAM,
@@ -226,21 +224,21 @@ fn test_zp_addressing() {
 
 #[test]
 fn test_zpx_addressing() {
-    let mut vm = get_vm();
+    let (mut io, mut vm) = get_vm();
     for zpaddr in 0..255 {
         for index in 0..255 {
             let mut st = Status::default();
             let pc = vm.r_pc.wrapping_add(1);
             let data = zpaddr;
 
-            setup_memory!(vm {
+            setup_memory!(io + vm {
                     pc => LDA_ZPX,
                     pc.wrapping_add(1) => zpaddr,
                     pc.wrapping_add(2) => NOP_IMP,
                     zpaddr.wrapping_add(index) as u16 => data
                 } [r_ix => index]);
 
-            assert_execution_eq!(vm, st, {
+            assert_execution_eq!(io, vm, st, {
                 (cycle {
                     t  => 0,
                     pc => pc.wrapping_add(1),
@@ -270,8 +268,8 @@ fn test_zpx_addressing() {
                 }) (=)
             });
 
-            assert_next_instr_is_nop(&mut vm, &mut st);
-            setup_memory!(vm {
+            assert_next_instr_is_nop(&mut io, &mut vm, &mut st);
+            setup_memory!(io + vm {
                     pc => JAM,
                     pc.wrapping_add(1) => JAM,
                     pc.wrapping_add(2) => JAM,
@@ -283,21 +281,21 @@ fn test_zpx_addressing() {
 
 #[test]
 fn test_zpy_addressing() {
-    let mut vm = get_vm();
+    let (mut io, mut vm) = get_vm();
     for zpaddr in 0..255 {
         for index in 0..255 {
             let mut st = Status::default();
             let pc = vm.r_pc.wrapping_add(1);
             let data = zpaddr;
 
-            setup_memory!(vm {
+            setup_memory!(io + vm {
                     pc => LDX_ZPY,
                     pc.wrapping_add(1) => zpaddr,
                     pc.wrapping_add(2) => NOP_IMP,
                     zpaddr.wrapping_add(index) as u16 => data
                 } [r_iy => index]);
 
-            assert_execution_eq!(vm, st, {
+            assert_execution_eq!(io, vm, st, {
                 (cycle {
                     t => 0,
                     pc => pc + 1,
@@ -327,8 +325,8 @@ fn test_zpy_addressing() {
                 }) (=)
             });
 
-            assert_next_instr_is_nop(&mut vm, &mut st);
-            setup_memory!(vm {
+            assert_next_instr_is_nop(&mut io, &mut vm, &mut st);
+            setup_memory!(io + vm {
                     pc => JAM,
                     pc.wrapping_add(1) => JAM,
                     pc.wrapping_add(2) => JAM,
@@ -342,7 +340,7 @@ const MAGIC: u8 = 0xF0;
 
 #[test]
 fn test_abs_addressing() {
-    let mut vm = get_vm();
+    let (mut io, mut vm) = get_vm();
     for low_byte in 0..512 {
         let mut st = Status::default();
 
@@ -350,7 +348,7 @@ fn test_abs_addressing() {
         let opcode = LDA_ABS;
         let addr = (0xFF00_u16).wrapping_add(low_byte);
 
-        setup_memory!(vm {
+        setup_memory!(io + vm {
             pc => opcode,
             pc.wrapping_add(1) => (addr & 0x00FF) as u8,
             pc.wrapping_add(2) => ((addr & 0xFF00) >> 8) as u8,
@@ -358,7 +356,7 @@ fn test_abs_addressing() {
             addr => low_byte as u8
         });
 
-        assert_execution_eq!(vm, st, {
+        assert_execution_eq!(io, vm, st, {
             (cycle {
                 t => 0,
                 pc => pc + 1,
@@ -384,8 +382,8 @@ fn test_abs_addressing() {
             }) (=)
         });
 
-        assert_next_instr_is_nop(&mut vm, &mut st);
-        setup_memory!(vm {
+        assert_next_instr_is_nop(&mut io, &mut vm, &mut st);
+        setup_memory!(io + vm {
                 pc => JAM,
                 pc.wrapping_add(1) => JAM,
                 pc.wrapping_add(2) => JAM,
@@ -396,7 +394,7 @@ fn test_abs_addressing() {
 }
 
 fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
-    let mut vm = get_vm();
+    let (mut io, mut vm) = get_vm();
     for low_byte in 0..512 {
         for index in 0..=255_u8 {
             let mut st = Status::default();
@@ -404,7 +402,7 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
             let pc = vm.r_pc.wrapping_add(1);
             let addr = (0xFF00_u16).wrapping_add(low_byte);
 
-            setup_memory!(vm {
+            setup_memory!(io + vm {
                 pc => opcode,
                 pc.wrapping_add(1) => (addr & 0x00FF) as u8,
                 pc.wrapping_add(2) => ((addr & 0xFF00) >> 8) as u8,
@@ -413,12 +411,12 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
             });
 
             if index_register == IndexRegister::X {
-                setup_memory!(vm {} [r_ix => index]);
+                setup_memory!(io + vm {} [r_ix => index]);
             } else {
-                setup_memory!(vm {} [r_iy => index]);
+                setup_memory!(io + vm {} [r_iy => index]);
             }
 
-            assert_execution_eq!(vm, st, {
+            assert_execution_eq!(io, vm, st, {
                 (cycle {
                     t => 0,
                     pc => pc.wrapping_add(1),
@@ -442,7 +440,7 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
             });
 
             if ((addr & 0x00FF) as u8).wrapping_add(index) < index {
-                assert_execution_eq!(vm, st, {
+                assert_execution_eq!(io, vm, st, {
                     (cycle {
                         nst => State::ResolveAddress(AddIndexRegister {
                             index_register: index_register, bump_page: true
@@ -452,7 +450,7 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
                 });
             }
 
-            assert_execution_eq!(vm, st, {
+            assert_execution_eq!(io, vm, st, {
                 (cycle {
                     nst => State::Process,
                     ab => addr.wrapping_add(index.into())
@@ -464,8 +462,8 @@ fn test_abi_addressing(opcode: u8, index_register: IndexRegister) {
                 }) (=)
             });
 
-            assert_next_instr_is_nop(&mut vm, &mut st);
-            setup_memory!(vm {
+            assert_next_instr_is_nop(&mut io, &mut vm, &mut st);
+            setup_memory!(io + vm {
                     pc => JAM,
                     pc.wrapping_add(1) => JAM,
                     pc.wrapping_add(2) => JAM,

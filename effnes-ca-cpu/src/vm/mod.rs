@@ -1,4 +1,4 @@
-use effnes_bus::{InspectBus, MemoryBus};
+use effnes_bus::{InspectBus, MemoryBus, peripheral::Peripheral};
 use effnes_cpu::{
     addr::{AddressingMode, IndexRegister},
     consts::{CpuVector, Flags},
@@ -33,7 +33,7 @@ enum State {
     Halt,
 }
 
-pub struct VM<T: MemoryBus> {
+pub struct VM {
     /// (Register) Program Counter
     r_pc: u16,
 
@@ -77,11 +77,6 @@ pub struct VM<T: MemoryBus> {
     /// Stores the executed cycle number of the current instruction.
     /// It is set to T0 on every [State::Fetch] state.
     i_tm: u8,
-
-    /// Input and Output bus
-    /// Used for communication between the emulated CPU and its peripherals
-    /// (RAM, PPU, APU, etc.).
-    pub io: T,
 }
 
 macro_rules! update_register {
@@ -91,41 +86,21 @@ macro_rules! update_register {
     };
 }
 
-impl<T: MemoryBus> VM<T> {
-    pub fn new(memory: T) -> Self {
-        Self {
-            r_pc: 0x8000,
-            r_sp: 0,
-            r_ac: 0,
-            r_ix: 0,
-            r_iy: 0,
-            r_ps: Flags::empty(),
-
-            i_nst: State::Fetch,
-            i_adm: AddressingMode::Implied,
-            i_opr: 0,
-            i_ex: 0,
-            i_ab: 0,
-            i_tm: 0,
-
-            io: memory,
-        }
-    }
-
-    fn next_byte(&mut self) -> u8 {
-        let out: u8 = self.io.read_u8(self.r_pc);
+impl VM {
+    fn next_byte(&mut self, io: &mut impl MemoryBus) -> u8 {
+        let out: u8 = io.read_u8(self.r_pc);
         self.r_pc = self.r_pc.wrapping_add(1);
         out
     }
 
-    fn stack_push_byte(&mut self, value: u8) {
-        self.io.write_u8((self.r_sp as u16) | 0x100, value);
+    fn stack_push_byte(&mut self, io: &mut impl MemoryBus, value: u8) {
+        io.write_u8((self.r_sp as u16) | 0x100, value);
         self.r_sp = self.r_sp.wrapping_sub(1);
     }
 
-    fn stack_pop_byte(&mut self) -> u8 {
+    fn stack_pop_byte(&mut self, io: &mut impl MemoryBus) -> u8 {
         self.r_sp = self.r_sp.wrapping_add(1);
-        self.io.read_u8((self.r_sp as u16) | 0x100)
+        io.read_u8((self.r_sp as u16) | 0x100)
     }
 
     fn set_flag(&mut self, flag: Flags, value: bool) {
@@ -140,8 +115,12 @@ impl<T: MemoryBus> VM<T> {
         self.set_flag(Flags::Negative, value & 0x80 > 0);
         self.set_flag(Flags::Zero, value == 0);
     }
+}
 
-    pub fn cold_reset(&mut self) {
+impl Peripheral for VM {
+    fn recv(&mut self, addr: u16, value: u8) {}
+
+    fn cold_reset(&mut self) {
         self.r_ps = Flags::empty();
         self.r_ac = 0;
         self.r_ix = 0;
@@ -153,7 +132,7 @@ impl<T: MemoryBus> VM<T> {
         self.warm_reset();
     }
 
-    pub fn warm_reset(&mut self) {
+    fn warm_reset(&mut self) {
         self.r_ps |= Flags::IntDis;
         self.r_sp = self.r_sp.wrapping_sub(0x03);
 
@@ -165,7 +144,7 @@ impl<T: MemoryBus> VM<T> {
         self.i_tm = 0;
     }
 
-    pub fn cycle(&mut self) {
+    fn cycle(&mut self, io: &mut impl MemoryBus) {
         self.i_tm += 1;
         self.i_nst = 'new_state_match: {
             match &self.i_nst {
@@ -174,7 +153,7 @@ impl<T: MemoryBus> VM<T> {
                 State::Fetch => {
                     self.i_tm = 0;
                     self.r_pc = self.r_pc.wrapping_add(1);
-                    self.i_ex = self.next_byte();
+                    self.i_ex = self.next_byte(io);
                     self.i_adm = self.i_ex.into();
 
                     match self.i_adm {
@@ -199,7 +178,7 @@ impl<T: MemoryBus> VM<T> {
 
                     match ads {
                         FetchOperand => {
-                            self.i_opr = self.io.read_u8(self.r_pc);
+                            self.i_opr = io.read_u8(self.r_pc);
                             self.i_ab = self.i_opr as u16;
                             match &self.i_adm {
                                 AddressingMode::ZeroPage => State::Process,
@@ -219,10 +198,10 @@ impl<T: MemoryBus> VM<T> {
 
                         FetchAddress { high_byte } => {
                             if !high_byte {
-                                self.i_ab = self.next_byte() as u16;
+                                self.i_ab = self.next_byte(io) as u16;
                                 State::ResolveAddress(FetchAddress { high_byte: true })
                             } else {
-                                self.i_ab += (self.io.read_u8(self.r_pc) as u16) << 8;
+                                self.i_ab += (io.read_u8(self.r_pc) as u16) << 8;
                                 match &self.i_adm {
                                     AddressingMode::AbsoluteI(ir) => {
                                         State::ResolveAddress(AddIndexRegister {
@@ -236,23 +215,23 @@ impl<T: MemoryBus> VM<T> {
                         }
 
                         IndXDummyRead => {
-                            self.io.read_u8(self.i_opr as u16);
+                            io.read_u8(self.i_opr as u16);
                             self.i_opr = self.i_opr.wrapping_add(self.r_ix);
                             State::ResolveAddress(FetchZeroPageAddress { high_byte: false })
                         }
 
                         IndZPDummyRead => {
-                            self.io.read_u8(self.i_ab);
+                            io.read_u8(self.i_ab);
                             State::ResolveAddress(ZeroPageAddIndexRegister)
                         }
 
                         FetchZeroPageAddress { high_byte } => {
                             if !high_byte {
-                                self.i_ab = self.io.read_u8(self.i_opr as u16) as u16;
+                                self.i_ab = io.read_u8(self.i_opr as u16) as u16;
                                 self.i_opr = self.i_opr.wrapping_add(1);
                                 State::ResolveAddress(FetchZeroPageAddress { high_byte: true })
                             } else {
-                                self.i_ab += (self.io.read_u8(self.i_opr as u16) as u16) << 8;
+                                self.i_ab += (io.read_u8(self.i_opr as u16) as u16) << 8;
                                 match self.i_adm {
                                     AddressingMode::IndirectI(IndexRegister::Y) => {
                                         State::ResolveAddress(AddIndexRegister {
@@ -281,7 +260,7 @@ impl<T: MemoryBus> VM<T> {
                                 let low_byte = (self.i_ab as u8).wrapping_add(index);
                                 if low_byte < index {
                                     self.i_ab = (self.i_ab & 0xFF00) + low_byte as u16;
-                                    self.io.read_u8(self.i_ab);
+                                    io.read_u8(self.i_ab);
                                     State::ResolveAddress(AddIndexRegister {
                                         index_register: *index_register,
                                         bump_page: true,
@@ -314,7 +293,7 @@ impl<T: MemoryBus> VM<T> {
                     // TODO: Don't read address on store operations
                     match self.i_adm {
                         AddressingMode::Implied => (),
-                        _ => self.i_opr = self.io.read_u8(self.i_ab),
+                        _ => self.i_opr = io.read_u8(self.i_ab),
                     };
 
                     let mnemonic: Mnemonic = self.i_ex.into();
@@ -457,13 +436,13 @@ impl<T: MemoryBus> VM<T> {
 
                         // Store operations
                         Sta => {
-                            self.io.write_u8(self.i_ab, self.r_ac);
+                            io.write_u8(self.i_ab, self.r_ac);
                         }
                         Stx => {
-                            self.io.write_u8(self.i_ab, self.r_ix);
+                            io.write_u8(self.i_ab, self.r_ix);
                         }
                         Sty => {
-                            self.io.write_u8(self.i_ab, self.r_iy);
+                            io.write_u8(self.i_ab, self.r_iy);
                         }
 
                         // Read-Modify-Write operations
@@ -615,7 +594,7 @@ impl<T: MemoryBus> VM<T> {
                 },
 
                 State::Write { dummy: false, data } => {
-                    self.io.write_u8(self.i_ab, *data);
+                    io.write_u8(self.i_ab, *data);
                     State::Fetch
                 }
             }
@@ -623,8 +602,11 @@ impl<T: MemoryBus> VM<T> {
     }
 }
 
-impl<T: MemoryBus + InspectBus> InspectCpu for VM<T> {
-    const CYCLE_ACCURATE: bool = true;
+impl InspectCpu for VM {
+    fn is_cycle_accurate(&self) -> bool {
+        true
+    }
+
     fn state(&self) -> CpuState {
         CpuState {
             pc: self.r_pc,
@@ -641,9 +623,23 @@ impl<T: MemoryBus + InspectBus> InspectCpu for VM<T> {
     }
 }
 
-impl<T: MemoryBus + Default> Default for VM<T> {
+impl Default for VM {
     fn default() -> Self {
-        VM::new(T::default())
+        Self {
+            r_pc: 0x8000,
+            r_sp: 0,
+            r_ac: 0,
+            r_ix: 0,
+            r_iy: 0,
+            r_ps: Flags::empty(),
+
+            i_nst: State::Fetch,
+            i_adm: AddressingMode::Implied,
+            i_opr: 0,
+            i_ex: 0,
+            i_ab: 0,
+            i_tm: 0,
+        }
     }
 }
 

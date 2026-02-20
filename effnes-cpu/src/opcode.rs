@@ -1,8 +1,9 @@
 use crate::consts::Flags;
+use std::fmt::Display;
 
 pub type OpCode = u8;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Mnemonic {
     Adc,
     Anc,
@@ -73,6 +74,28 @@ pub enum Mnemonic {
 impl From<OpCode> for Mnemonic {
     fn from(opcode: OpCode) -> Self {
         JUMP_TABLE[opcode as usize]
+    }
+}
+
+impl Display for Mnemonic {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Bxx { flag, set } => {
+                write!(
+                    f,
+                    "B{}{}",
+                    flag.first_letter().to_lowercase(),
+                    if set { 's' } else { 'c' }
+                )
+            }
+            Clx { flag } => {
+                write!(f, "Cl{}", flag.first_letter().to_lowercase())
+            }
+            Sfx { flag } => {
+                write!(f, "Se{}", flag.first_letter().to_lowercase())
+            }
+            _ => write!(f, "{:?}", self),
+        }
     }
 }
 
