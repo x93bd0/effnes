@@ -390,8 +390,8 @@ impl Peripheral for VM {
 
             Plp => {
                 self.r_ps = Flags::from_bits_retain(
-                    (self.stack_pop_byte(io) & !(consts::Flag::Break as u8))
-                        | (consts::Flag::Reserved as u8),
+                    (self.stack_pop_byte(io) & !(<Flags as Into<u8>>::into(Flags::Break)))
+                        | (<Flags as Into<u8>>::into(Flags::Reserved)),
                 );
             }
 
