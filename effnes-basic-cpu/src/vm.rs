@@ -1,9 +1,9 @@
 use crate::consts::{self, AddrMode};
-use effnes_bus::Memory;
+use effnes_bus::{InspectBus, MemoryBus};
 use std::fmt;
 
 /// 6502 Virtual Machine
-pub struct VM<T: Memory> {
+pub struct VM<T: MemoryBus> {
     /// The program counter.
     pub pc: u16,
 
@@ -30,7 +30,7 @@ pub struct VM<T: Memory> {
     pub magic: u8,
 }
 
-impl<T: Memory> Default for VM<T> {
+impl<T: MemoryBus + Default> Default for VM<T> {
     /// Instanciates a new Virtual Machine.
     fn default() -> VM<T> {
         VM {
@@ -49,7 +49,7 @@ impl<T: Memory> Default for VM<T> {
     }
 }
 
-impl<T: Memory> VM<T> {
+impl<T: MemoryBus> VM<T> {
     fn enable_flag(&mut self, flag: consts::Flag) {
         self.p |= flag as u8;
     }
@@ -76,13 +76,13 @@ impl<T: Memory> VM<T> {
     }
 
     fn next_byte(&mut self) -> u8 {
-        let out: u8 = self.io.read_byte(self.pc);
+        let out: u8 = self.io.read_u8(self.pc);
         self.pc = self.pc.wrapping_add(1);
         out
     }
 
     fn next_addr(&mut self) -> u16 {
-        let out: u16 = self.io.read_addr(self.pc);
+        let out: u16 = self.io.read_u16(self.pc);
         self.pc = self.pc.wrapping_add(2);
         out
     }
@@ -94,7 +94,7 @@ impl<T: Memory> VM<T> {
     /// It supports stack pointer overflow.
     /// (0x100 - 1 == 0x1FF, in the current implementation)
     pub fn stack_push_byte(&mut self, value: u8) {
-        self.io.write_byte((self.s as u16) | 0x100, value);
+        self.io.write_u8((self.s as u16) | 0x100, value);
         self.s = self.s.wrapping_sub(1);
     }
 
@@ -117,7 +117,7 @@ impl<T: Memory> VM<T> {
     /// (0x1FF + 1 == 0x100, in the current implementation)
     pub fn stack_pop_byte(&mut self) -> u8 {
         self.s = self.s.wrapping_add(1);
-        self.io.read_byte((self.s as u16) | 0x100)
+        self.io.read_u8((self.s as u16) | 0x100)
     }
 
     /// Pops an address from 0x100 .. 0x1FF, depending on the current value of
@@ -159,7 +159,7 @@ impl<T: Memory> VM<T> {
         self.cycles = 0;
         self.ex_interrupt = 0;
 
-        self.pc = self.io.read_addr(consts::CPUVector::Rst as u16);
+        self.pc = self.io.read_u16(consts::CPUVector::Rst as u16);
 
         if self.cycles == 0 {
             self.p = 0x36;
@@ -302,10 +302,10 @@ impl<T: Memory> VM<T> {
                 consts::AddrMode::Indirect => {
                     t_addr = self.next_addr();
                     if t_addr & 0xFF == 0xFF {
-                        t_addr = (self.io.read_byte(t_addr) as u16)
-                            | ((self.io.read_byte(t_addr & 0xff00) as u16) << 8);
+                        t_addr = (self.io.read_u8(t_addr) as u16)
+                            | ((self.io.read_u8(t_addr & 0xff00) as u16) << 8);
                     } else {
-                        t_addr = self.io.read_addr(t_addr);
+                        t_addr = self.io.read_u16(t_addr);
                     }
                 }
 
@@ -345,19 +345,19 @@ impl<T: Memory> VM<T> {
                     t_byte1 = self.next_byte();
                     t_addr = ((self
                         .io
-                        .read_byte(t_byte1.wrapping_add_signed((self.x as i8) + 1) as u16)
+                        .read_u8(t_byte1.wrapping_add_signed((self.x as i8) + 1) as u16)
                         as u16)
                         << 8)
                         + (self
                             .io
-                            .read_byte(t_byte1.wrapping_add_signed(self.x as i8) as u16)
+                            .read_u8(t_byte1.wrapping_add_signed(self.x as i8) as u16)
                             as u16);
                 }
 
                 consts::AddrMode::IndirectY => {
                     t_byte1 = self.next_byte();
-                    t_addr = self.io.read_byte(t_byte1 as u16) as u16;
-                    t_addr += (self.io.read_byte(t_byte1.wrapping_add(1) as u16) as u16) << 8;
+                    t_addr = self.io.read_u8(t_byte1 as u16) as u16;
+                    t_addr += (self.io.read_u8(t_byte1.wrapping_add(1) as u16) as u16) << 8;
                     if ((t_addr.wrapping_add(self.y as u16)) & 0xff00) != (t_addr & 0xff00) {
                         timing += 1;
                     }
@@ -380,27 +380,27 @@ impl<T: Memory> VM<T> {
             };
 
             match internal_opcode {
-                // Memory / Registers
+                // MemoryBus / Registers
                 consts::OpCode::Lda => {
-                    self.a = self.io.read_byte(t_addr);
+                    self.a = self.io.read_u8(t_addr);
                     self.set_nz_flags(self.a);
                 }
 
                 consts::OpCode::Ldx => {
-                    self.x = self.io.read_byte(t_addr);
+                    self.x = self.io.read_u8(t_addr);
                     self.set_nz_flags(self.x);
                 }
 
                 consts::OpCode::Ldy => {
-                    self.y = self.io.read_byte(t_addr);
+                    self.y = self.io.read_u8(t_addr);
                     self.set_nz_flags(self.y);
                 }
 
-                consts::OpCode::Sta => self.io.write_byte(t_addr, self.a),
+                consts::OpCode::Sta => self.io.write_u8(t_addr, self.a),
 
-                consts::OpCode::Stx => self.io.write_byte(t_addr, self.x),
+                consts::OpCode::Stx => self.io.write_u8(t_addr, self.x),
 
-                consts::OpCode::Sty => self.io.write_byte(t_addr, self.y),
+                consts::OpCode::Sty => self.io.write_u8(t_addr, self.y),
 
                 consts::OpCode::Tax => {
                     self.x = self.a;
@@ -452,8 +452,8 @@ impl<T: Memory> VM<T> {
 
                 // Decrements / Increments
                 consts::OpCode::Dec => {
-                    t_byte1 = self.io.read_byte(t_addr).wrapping_sub(1);
-                    self.io.write_byte(t_addr, t_byte1);
+                    t_byte1 = self.io.read_u8(t_addr).wrapping_sub(1);
+                    self.io.write_u8(t_addr, t_byte1);
                     self.set_nz_flags(t_byte1);
                 }
 
@@ -468,8 +468,8 @@ impl<T: Memory> VM<T> {
                 }
 
                 consts::OpCode::Inc => {
-                    t_byte1 = self.io.read_byte(t_addr).wrapping_add(1);
-                    self.io.write_byte(t_addr, t_byte1);
+                    t_byte1 = self.io.read_u8(t_addr).wrapping_add(1);
+                    self.io.write_u8(t_addr, t_byte1);
                     self.set_nz_flags(t_byte1);
                 }
 
@@ -486,7 +486,7 @@ impl<T: Memory> VM<T> {
                 // Arithmetic
                 consts::OpCode::Sbc => {
                     // Pseudo-Composite
-                    t_byte1 = !self.io.read_byte(t_addr);
+                    t_byte1 = !self.io.read_u8(t_addr);
                     t_addr = (self.a as u16)
                         + (t_byte1 as u16)
                         + (self.get_flag(consts::Flag::Carry) as u16);
@@ -500,7 +500,7 @@ impl<T: Memory> VM<T> {
                 }
 
                 consts::OpCode::Adc => {
-                    t_byte1 = self.io.read_byte(t_addr);
+                    t_byte1 = self.io.read_u8(t_addr);
                     t_addr = (self.a as u16)
                         + (t_byte1 as u16)
                         + (self.get_flag(consts::Flag::Carry) as u16);
@@ -514,17 +514,17 @@ impl<T: Memory> VM<T> {
                 }
 
                 consts::OpCode::And => {
-                    self.a &= self.io.read_byte(t_addr);
+                    self.a &= self.io.read_u8(t_addr);
                     self.set_nz_flags(self.a);
                 }
 
                 consts::OpCode::Eor => {
-                    self.a ^= self.io.read_byte(t_addr);
+                    self.a ^= self.io.read_u8(t_addr);
                     self.set_nz_flags(self.a);
                 }
 
                 consts::OpCode::Ora => {
-                    self.a |= self.io.read_byte(t_addr);
+                    self.a |= self.io.read_u8(t_addr);
                     self.set_nz_flags(self.a);
                 }
 
@@ -533,7 +533,7 @@ impl<T: Memory> VM<T> {
                     t_byte1 = if address_mode == consts::AddrMode::Accumulator {
                         self.a
                     } else {
-                        self.io.read_byte(t_addr)
+                        self.io.read_u8(t_addr)
                     };
 
                     self.set_flag(consts::Flag::Carry, t_byte1 & 0x80 != 0);
@@ -542,7 +542,7 @@ impl<T: Memory> VM<T> {
                     if address_mode == consts::AddrMode::Accumulator {
                         self.a = t_byte1;
                     } else {
-                        self.io.write_byte(t_addr, t_byte1);
+                        self.io.write_u8(t_addr, t_byte1);
                     }
 
                     self.set_nz_flags(t_byte1);
@@ -552,7 +552,7 @@ impl<T: Memory> VM<T> {
                     t_byte1 = if address_mode == consts::AddrMode::Accumulator {
                         self.a
                     } else {
-                        self.io.read_byte(t_addr)
+                        self.io.read_u8(t_addr)
                     };
 
                     self.set_flag(consts::Flag::Carry, t_byte1 & 0x1 != 0);
@@ -561,7 +561,7 @@ impl<T: Memory> VM<T> {
                     if address_mode == consts::AddrMode::Accumulator {
                         self.a = t_byte1;
                     } else {
-                        self.io.write_byte(t_addr, t_byte1);
+                        self.io.write_u8(t_addr, t_byte1);
                     }
 
                     self.set_nz_flags(t_byte1);
@@ -571,7 +571,7 @@ impl<T: Memory> VM<T> {
                     t_byte1 = if address_mode == consts::AddrMode::Accumulator {
                         self.a
                     } else {
-                        self.io.read_byte(t_addr)
+                        self.io.read_u8(t_addr)
                     };
 
                     t_byte2 = self.get_flag(consts::Flag::Carry);
@@ -582,7 +582,7 @@ impl<T: Memory> VM<T> {
                     if address_mode == consts::AddrMode::Accumulator {
                         self.a = t_byte1;
                     } else {
-                        self.io.write_byte(t_addr, t_byte1);
+                        self.io.write_u8(t_addr, t_byte1);
                     }
 
                     self.set_nz_flags(t_byte1);
@@ -592,7 +592,7 @@ impl<T: Memory> VM<T> {
                     t_byte1 = if address_mode == consts::AddrMode::Accumulator {
                         self.a
                     } else {
-                        self.io.read_byte(t_addr)
+                        self.io.read_u8(t_addr)
                     };
 
                     t_byte2 = self.get_flag(consts::Flag::Carry);
@@ -603,7 +603,7 @@ impl<T: Memory> VM<T> {
                     if address_mode == consts::AddrMode::Accumulator {
                         self.a = t_byte1;
                     } else {
-                        self.io.write_byte(t_addr, t_byte1);
+                        self.io.write_u8(t_addr, t_byte1);
                     }
 
                     self.set_nz_flags(t_byte1);
@@ -640,19 +640,19 @@ impl<T: Memory> VM<T> {
 
                 // Comparisons
                 consts::OpCode::Cmp => {
-                    t_byte1 = self.io.read_byte(t_addr);
+                    t_byte1 = self.io.read_u8(t_addr);
                     self.set_flag(consts::Flag::Carry, self.a >= t_byte1);
                     self.set_nz_flags(self.a.wrapping_sub(t_byte1));
                 }
 
                 consts::OpCode::Cpx => {
-                    t_byte1 = self.io.read_byte(t_addr);
+                    t_byte1 = self.io.read_u8(t_addr);
                     self.set_flag(consts::Flag::Carry, self.x >= t_byte1);
                     self.set_nz_flags(self.x.wrapping_sub(t_byte1));
                 }
 
                 consts::OpCode::Cpy => {
-                    t_byte1 = self.io.read_byte(t_addr);
+                    t_byte1 = self.io.read_u8(t_addr);
                     self.set_flag(consts::Flag::Carry, self.y >= t_byte1);
                     self.set_nz_flags(self.y.wrapping_sub(t_byte1));
                 }
@@ -734,7 +734,7 @@ impl<T: Memory> VM<T> {
                     self.stack_push_addr(self.pc.wrapping_add(1));
                     self.stack_push_byte(self.p | (consts::Flag::Break as u8));
                     self.enable_flag(consts::Flag::IntDis);
-                    self.pc = self.io.read_addr(consts::CPUVector::Brk as u16);
+                    self.pc = self.io.read_u16(consts::CPUVector::Brk as u16);
                 }
 
                 consts::OpCode::Rti => {
@@ -744,7 +744,7 @@ impl<T: Memory> VM<T> {
                 }
 
                 consts::OpCode::Bit => {
-                    t_byte1 = self.io.read_byte(t_addr);
+                    t_byte1 = self.io.read_u8(t_addr);
                     t_byte2 = self.a & t_byte1;
                     self.set_nz_flags(t_byte2);
                     self.set_flag(consts::Flag::Overflow, t_byte2 & 0x40 != 0);
@@ -756,25 +756,25 @@ impl<T: Memory> VM<T> {
                 // Illegal Opcodes
                 consts::OpCode::Asr => {
                     // AND code
-                    self.a &= self.io.read_byte(t_addr);
+                    self.a &= self.io.read_u8(t_addr);
                     self.set_flag(consts::Flag::Carry, self.a & 1 != 0);
                     self.a >>= 1;
                     self.set_nz_flags(self.a);
                 }
 
                 consts::OpCode::An1 | consts::OpCode::An2 => {
-                    self.a &= self.io.read_byte(t_addr);
+                    self.a &= self.io.read_u8(t_addr);
                     self.set_flag(consts::Flag::Carry, self.a & 0x80 != 0);
                     self.set_nz_flags(self.a);
                 }
 
                 consts::OpCode::Ane => {
-                    self.a &= self.magic & self.x & self.io.read_byte(t_addr);
+                    self.a &= self.magic & self.x & self.io.read_u8(t_addr);
                     self.set_nz_flags(self.a);
                 }
 
                 consts::OpCode::Arr => {
-                    self.a = ((self.a & self.io.read_byte(t_addr)) >> 1)
+                    self.a = ((self.a & self.io.read_u8(t_addr)) >> 1)
                         | ((self.get_flag(consts::Flag::Carry) as u8) << 7);
                     self.set_nz_flags(self.a);
                     self.set_flag(consts::Flag::Carry, self.a & 0x40 != 0);
@@ -787,8 +787,8 @@ impl<T: Memory> VM<T> {
                 // DEC + CMP
                 consts::OpCode::Dcp => {
                     // DEC code
-                    t_byte1 = self.io.read_byte(t_addr).wrapping_sub(1);
-                    self.io.write_byte(t_addr, t_byte1);
+                    t_byte1 = self.io.read_u8(t_addr).wrapping_sub(1);
+                    self.io.write_u8(t_addr, t_byte1);
 
                     // CMP code
                     self.set_flag(consts::Flag::Carry, self.a >= t_byte1);
@@ -798,8 +798,8 @@ impl<T: Memory> VM<T> {
                 // INC + SBC
                 consts::OpCode::Isc => {
                     // INC code
-                    t_byte1 = self.io.read_byte(t_addr).wrapping_add(1);
-                    self.io.write_byte(t_addr, t_byte1);
+                    t_byte1 = self.io.read_u8(t_addr).wrapping_add(1);
+                    self.io.write_u8(t_addr, t_byte1);
 
                     // SBC code
                     t_byte1 = !t_byte1;
@@ -816,7 +816,7 @@ impl<T: Memory> VM<T> {
                 }
 
                 consts::OpCode::Las => {
-                    self.s = self.io.read_byte(t_addr) & self.s;
+                    self.s = self.io.read_u8(t_addr) & self.s;
                     self.a = self.s;
                     self.x = self.s;
                     self.set_nz_flags(self.s);
@@ -824,7 +824,7 @@ impl<T: Memory> VM<T> {
 
                 // LDA + LDX
                 consts::OpCode::Lax => {
-                    self.a = self.io.read_byte(t_addr);
+                    self.a = self.io.read_u8(t_addr);
                     self.x = self.a;
                     self.set_nz_flags(self.a);
                 }
@@ -832,12 +832,12 @@ impl<T: Memory> VM<T> {
                 // ROL + AND
                 consts::OpCode::Rla => {
                     // ROL code
-                    t_byte1 = self.io.read_byte(t_addr);
+                    t_byte1 = self.io.read_u8(t_addr);
                     t_byte2 = self.get_flag(consts::Flag::Carry);
                     self.set_flag(consts::Flag::Carry, t_byte1 & 0x80 != 0);
                     t_byte1 <<= 1;
                     t_byte1 = t_byte1.wrapping_add(t_byte2);
-                    self.io.write_byte(t_addr, t_byte1);
+                    self.io.write_u8(t_addr, t_byte1);
 
                     // AND code
                     self.a &= t_byte1;
@@ -847,12 +847,12 @@ impl<T: Memory> VM<T> {
                 // ROR + ADC
                 consts::OpCode::Rra => {
                     // ROR code
-                    t_byte1 = self.io.read_byte(t_addr);
+                    t_byte1 = self.io.read_u8(t_addr);
                     t_byte2 = self.get_flag(consts::Flag::Carry);
                     self.set_flag(consts::Flag::Carry, t_byte1 & 0x1 != 0);
                     t_byte1 >>= 1;
                     t_byte1 = t_byte1.wrapping_add(if t_byte2 != 0 { 0x80 } else { 0 });
-                    self.io.write_byte(t_addr, t_byte1);
+                    self.io.write_u8(t_addr, t_byte1);
 
                     // ADC code
                     t_addr = (self.a as u16)
@@ -869,12 +869,12 @@ impl<T: Memory> VM<T> {
 
                 // S(Accumulator & X register)
                 consts::OpCode::Sax => {
-                    self.io.write_byte(t_addr, self.a & self.x);
+                    self.io.write_u8(t_addr, self.a & self.x);
                 }
 
                 consts::OpCode::Sbx => {
                     self.x &= self.a;
-                    t_addr = (self.x as u16).wrapping_sub(self.io.read_byte(t_addr) as u16);
+                    t_addr = (self.x as u16).wrapping_sub(self.io.read_u8(t_addr) as u16);
                     self.set_flag(consts::Flag::Carry, t_addr < 0x100);
                     self.x = t_addr as u8;
                     self.set_nz_flags(self.x);
@@ -883,24 +883,25 @@ impl<T: Memory> VM<T> {
                 consts::OpCode::Sha => {
                     t_byte1 = match address_mode {
                         // TODO: Only read one bit
-                        consts::AddrMode::AbsoluteY => ((self.io.read_addr(self.pc.wrapping_sub(2))
-                            >> 8) as u8)
-                            .wrapping_add(1),
-                        consts::AddrMode::ZeroPageY => self.io.read_byte(
-                            self.io.read_byte(self.pc.wrapping_sub(1)).wrapping_add(1) as u16,
-                        ),
+                        consts::AddrMode::AbsoluteY => {
+                            ((self.io.read_u16(self.pc.wrapping_sub(2)) >> 8) as u8).wrapping_add(1)
+                        }
+                        consts::AddrMode::ZeroPageY => {
+                            t_byte1 = self.io.read_u8(self.pc.wrapping_sub(1));
+                            self.io.read_u8(t_byte1 as u16).wrapping_add(1)
+                        }
                         _ => {
                             self.h = 1;
                             break;
                         }
                     };
 
-                    self.io.write_byte(t_addr, self.a & self.x & t_byte1);
+                    self.io.write_u8(t_addr, self.a & self.x & t_byte1);
                 }
 
                 consts::OpCode::Shx | consts::OpCode::Shy => {
                     // TODO: Only read one byte
-                    t_byte2 = self.io.read_byte(self.pc.wrapping_sub(1));
+                    t_byte2 = self.io.read_u8(self.pc.wrapping_sub(1));
                     t_byte1 = t_byte2.wrapping_add(1)
                         & (if raw_internal_opcode == (consts::OpCode::Shx as u8) {
                             self.x
@@ -912,29 +913,29 @@ impl<T: Memory> VM<T> {
                         t_addr = (t_addr & 0xff) | ((t_byte1 as u16) << 8).wrapping_add(1);
                     }
 
-                    self.io.write_byte(t_addr, t_byte1);
+                    self.io.write_u8(t_addr, t_byte1);
                 }
 
                 // ASL + ORA
                 consts::OpCode::Slo => {
                     // ASL code
-                    t_byte1 = self.io.read_byte(t_addr);
+                    t_byte1 = self.io.read_u8(t_addr);
                     self.set_flag(consts::Flag::Carry, t_byte1 & 0x80 != 0);
                     t_byte1 <<= 1;
-                    self.io.write_byte(t_addr, t_byte1);
+                    self.io.write_u8(t_addr, t_byte1);
 
                     // ORA code
-                    self.a |= self.io.read_byte(t_addr);
+                    self.a |= self.io.read_u8(t_addr);
                     self.set_nz_flags(self.a);
                 }
 
                 // LSR + EOR
                 consts::OpCode::Sre => {
                     // LSR code
-                    t_byte1 = self.io.read_byte(t_addr);
+                    t_byte1 = self.io.read_u8(t_addr);
                     self.set_flag(consts::Flag::Carry, t_byte1 & 0x1 != 0);
                     t_byte1 >>= 1;
-                    self.io.write_byte(t_addr, t_byte1);
+                    self.io.write_u8(t_addr, t_byte1);
 
                     // EOR code
                     self.a ^= t_byte1;
@@ -944,12 +945,9 @@ impl<T: Memory> VM<T> {
                 consts::OpCode::Tas => {
                     // TODO: Only read one byte
                     self.s = self.a & self.x;
-                    self.io.write_byte(
-                        t_addr,
-                        self.s
-                            & ((self.io.read_addr(self.pc.wrapping_sub(2)) >> 8) as u8)
-                                .wrapping_add(1),
-                    );
+                    t_byte1 =
+                        ((self.io.read_u16(self.pc.wrapping_sub(2)) >> 8) as u8).wrapping_add(1);
+                    self.io.write_u8(t_addr, self.s & t_byte1);
                 }
 
                 consts::OpCode::Jam => {
@@ -965,11 +963,11 @@ impl<T: Memory> VM<T> {
     }
 }
 
-impl<T: Memory> fmt::Display for VM<T> {
+impl<T: InspectBus + MemoryBus> fmt::Display for VM<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         // AB CD EF `MNE args`
 
-        let opcode = self.io.read_byte(self.pc);
+        let opcode = self.io.peek_u8(self.pc);
         let internal_repr: u16 = consts::TRANSLATION_TABLE[opcode as usize];
         let raw_internal_opcode: u8 = (internal_repr >> 8) as u8;
         let raw_address_mode: u8 = ((internal_repr >> 4) & 0b1111) as u8;
@@ -989,33 +987,33 @@ impl<T: Memory> fmt::Display for VM<T> {
         let pc = self.pc.wrapping_add(1);
 
         (print, length) = match address_mode {
-            consts::AddrMode::Immediate => (format!("#${:02x}", self.io.read_byte(pc)), 1),
+            consts::AddrMode::Immediate => (format!("#${:02x}", self.io.peek_u8(pc)), 1),
             consts::AddrMode::Relative => (
                 format!(
                     "${:04x}",
                     self.pc
                         .wrapping_add(2)
-                        .wrapping_add_signed((self.io.read_byte(pc) as i8) as i16)
+                        .wrapping_add_signed((self.io.peek_u8(pc) as i8) as i16)
                 ),
                 1,
             ),
 
-            consts::AddrMode::Absolute => (format!("${:04x}", self.io.read_addr(pc)), 2),
+            consts::AddrMode::Absolute => (format!("${:04x}", self.io.peek_u16(pc)), 2),
 
-            consts::AddrMode::Indirect => (format!("(${:04x})", self.io.read_addr(pc)), 2),
-            consts::AddrMode::ZeroPage => (format!("${:02x}", self.io.read_byte(pc)), 1),
-            consts::AddrMode::ZeroPageX => (format!("${:02x},X", self.io.read_byte(pc)), 1),
-            consts::AddrMode::ZeroPageY => (format!("${:02x},Y", self.io.read_byte(pc)), 1),
-            consts::AddrMode::AbsoluteX => (format!("${:04x},X", self.io.read_addr(pc)), 2),
-            consts::AddrMode::AbsoluteY => (format!("${:04x},Y", self.io.read_addr(pc)), 2),
-            consts::AddrMode::IndirectX => (format!("(${:02x},X)", self.io.read_addr(pc)), 1),
-            consts::AddrMode::IndirectY => (format!("(${:02x}),Y", self.io.read_addr(pc)), 1),
+            consts::AddrMode::Indirect => (format!("(${:04x})", self.io.peek_u16(pc)), 2),
+            consts::AddrMode::ZeroPage => (format!("${:02x}", self.io.peek_u8(pc)), 1),
+            consts::AddrMode::ZeroPageX => (format!("${:02x},X", self.io.peek_u8(pc)), 1),
+            consts::AddrMode::ZeroPageY => (format!("${:02x},Y", self.io.peek_u8(pc)), 1),
+            consts::AddrMode::AbsoluteX => (format!("${:04x},X", self.io.peek_u16(pc)), 2),
+            consts::AddrMode::AbsoluteY => (format!("${:04x},Y", self.io.peek_u16(pc)), 2),
+            consts::AddrMode::IndirectX => (format!("(${:02x},X)", self.io.peek_u16(pc)), 1),
+            consts::AddrMode::IndirectY => (format!("(${:02x}),Y", self.io.peek_u16(pc)), 1),
             consts::AddrMode::Accumulator => ("A".to_string(), 0),
             consts::AddrMode::Implied => ("".to_string(), 0),
         };
 
         for x in 0..length {
-            write!(f, " {:2x}", self.io.read_byte(pc.wrapping_add(x)))?;
+            write!(f, " {:2x}", self.io.peek_u8(pc.wrapping_add(x)))?;
         }
 
         for _ in length..2 {
