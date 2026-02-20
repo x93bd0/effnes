@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 bitflags = "2.10.0"
 effnes-bus = { path = "../effnes-bus" }
+effnes-cpu = { path = "../effnes-cpu" }

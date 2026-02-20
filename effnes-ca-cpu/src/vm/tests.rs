@@ -1,6 +1,6 @@
 use super::*;
 use AddressResolverState::*;
-use effnes_bus::BasicMemory;
+use effnes_bus::basic::BasicMemory;
 
 const NOP_IMP: u8 = 0xEA;
 const LDA_IMM: u8 = 0xA9;
@@ -42,7 +42,7 @@ macro_rules! setup_memory {
             $([ $( $reg:ident => $val: expr ),* ])?
         ) => {
             $(
-                $vm.io.write_byte($i, $j);
+                $vm.io.write_u8($i, $j);
             )*
 
             $(
