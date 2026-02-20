@@ -1,10 +1,10 @@
 use crate::{
     addr::{AddressingMode, IndexRegister},
     consts::Flags,
+    cpu::Cpu,
     opcode::{Mnemonic, OpCode},
 };
 use effnes_bus::InspectBus;
-use std::fmt::Display;
 
 pub struct State {
     pub pc: u16,
@@ -18,12 +18,19 @@ pub struct State {
     pub cc: usize,
 }
 
-pub trait InspectCpu {
-    fn is_cycle_accurate(&self) -> bool;
+pub trait DebugCpu: Cpu {
     fn state(&self) -> State;
+
+    fn set_cc(&mut self, cc: usize);
+    fn set_flags(&mut self, flags: Flags);
+    fn set_pc(&mut self, pc: u16);
+    fn set_sp(&mut self, sp: u8);
+    fn set_ac(&mut self, ac: u8);
+    fn set_ix(&mut self, ix: u8);
+    fn set_iy(&mut self, iy: u8);
 }
 
-pub fn debug_cpu(io: &dyn InspectBus, vm: &dyn InspectCpu) {
+pub fn debug(vm: &impl DebugCpu, io: &dyn InspectBus) {
     let s = vm.state();
     let opc: OpCode = io.peek_u8(s.pc);
     let am: AddressingMode = opc.into();

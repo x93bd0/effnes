@@ -1,6 +1,6 @@
-use effnes_cpu::inspect::{InspectCpu, State};
+use effnes_cpu::debug::{DebugCpu, State};
 
-pub fn validate_cpu(vm: &impl InspectCpu, expected: State, error_string: String) {
+pub fn validate_cpu(vm: &impl DebugCpu, expected: State, error_string: String) {
     let s = vm.state();
     assert_eq!(
         s.pc, expected.pc,

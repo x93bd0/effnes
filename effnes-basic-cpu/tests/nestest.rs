@@ -13,14 +13,14 @@ use std::io::{self, BufRead, BufReader, Read, Seek, SeekFrom};
 mod common;
 use effnes_bus::{basic::BasicMemory, peripheral::Peripheral, InspectBus};
 use effnes_cpu::consts::Flags;
-use effnes_cpu::inspect::{debug_cpu, InspectCpu, State};
+use effnes_cpu::debug::{self, DebugCpu, State};
 
 use effnes_basic_cpu::vm::VM;
 
 /// Validate a VM run by comparing it to the output from the NESTEST suite.
-fn validate(io: &impl InspectBus, vm: &impl InspectCpu, line: io::Result<String>) {
+fn validate(io: &impl InspectBus, vm: &impl DebugCpu, line: io::Result<String>) {
     // println!("{}", vm);
-    debug_cpu(io, vm);
+    debug::debug(vm, io);
     println!();
 
     let data = line.unwrap();
@@ -57,16 +57,16 @@ fn nestest() -> io::Result<()> {
     }
 
     vm.cold_reset();
-    vm.r_pc = 0xC000;
-    vm.r_ps = Flags::from_bits_retain(0x24);
-    vm.r_sp = 0xfd;
-    vm.cycles = 7;
+    vm.set_flags(Flags::from_bits_retain(0x24));
+    vm.set_pc(0xC000);
+    vm.set_sp(0xFD);
+    vm.set_cc(7);
 
     let file = File::open("res/nestest/nestest.log")?;
     let reader = BufReader::new(file);
 
     let mut stream = reader.lines();
-    while vm.cycles < 1_000_000 {
+    while vm.state().cc < 1_000_000 {
         let result = match stream.next() {
             Some(result) => result,
             _ => {

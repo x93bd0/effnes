@@ -2,7 +2,8 @@ use effnes_bus::{InspectBus, MemoryBus, peripheral::Peripheral};
 use effnes_cpu::{
     addr::{AddressingMode, IndexRegister},
     consts::{CpuVector, Flags},
-    inspect::{InspectCpu, State as CpuState},
+    cpu::Cpu,
+    debug::{DebugCpu, State as CpuState},
     opcode::Mnemonic,
 };
 
@@ -77,6 +78,10 @@ pub struct VM {
     /// Stores the executed cycle number of the current instruction.
     /// It is set to T0 on every [State::Fetch] state.
     i_tm: u8,
+
+    /// (Internal) Cycle Count
+    /// Stores the current cycle count.
+    i_cc: usize,
 }
 
 macro_rules! update_register {
@@ -118,7 +123,7 @@ impl VM {
 }
 
 impl Peripheral for VM {
-    fn recv(&mut self, addr: u16, value: u8) {}
+    fn recv(&mut self, _: u16, _: u8) {}
 
     fn cold_reset(&mut self) {
         self.r_ps = Flags::empty();
@@ -142,6 +147,7 @@ impl Peripheral for VM {
         self.i_ex = 0;
         self.i_ab = 0;
         self.i_tm = 0;
+        self.i_cc = 0;
     }
 
     fn cycle(&mut self, io: &mut impl MemoryBus) {
@@ -602,9 +608,39 @@ impl Peripheral for VM {
     }
 }
 
-impl InspectCpu for VM {
+impl Cpu for VM {
     fn is_cycle_accurate(&self) -> bool {
         true
+    }
+}
+
+impl DebugCpu for VM {
+    fn set_cc(&mut self, cc: usize) {
+        self.i_cc = cc;
+    }
+
+    fn set_flags(&mut self, flags: Flags) {
+        self.r_ps = flags;
+    }
+
+    fn set_pc(&mut self, pc: u16) {
+        self.r_pc = pc;
+    }
+
+    fn set_sp(&mut self, sp: u8) {
+        self.r_sp = sp;
+    }
+
+    fn set_ac(&mut self, ac: u8) {
+        self.r_ac = ac;
+    }
+
+    fn set_ix(&mut self, ix: u8) {
+        self.r_ix = ix;
+    }
+
+    fn set_iy(&mut self, iy: u8) {
+        self.r_iy = iy;
     }
 
     fn state(&self) -> CpuState {
@@ -639,6 +675,7 @@ impl Default for VM {
             i_ex: 0,
             i_ab: 0,
             i_tm: 0,
+            i_cc: 0,
         }
     }
 }

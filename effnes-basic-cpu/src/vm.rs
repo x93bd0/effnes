@@ -3,7 +3,8 @@ use effnes_bus::{peripheral::Peripheral, MemoryBus};
 use effnes_cpu::{
     addr::{AddressingMode, IndexRegister},
     consts::{CpuVector, Flags},
-    inspect::{InspectCpu, State as CpuState},
+    cpu::Cpu,
+    debug::{DebugCpu, State as CpuState},
     opcode::{Mnemonic, OpCode},
 };
 
@@ -837,9 +838,39 @@ impl Peripheral for VM {
     }
 }
 
-impl InspectCpu for VM {
+impl Cpu for VM {
     fn is_cycle_accurate(&self) -> bool {
         false
+    }
+}
+
+impl DebugCpu for VM {
+    fn set_cc(&mut self, cc: usize) {
+        self.i_cc = cc;
+    }
+
+    fn set_flags(&mut self, flags: Flags) {
+        self.r_ps = flags;
+    }
+
+    fn set_pc(&mut self, pc: u16) {
+        self.r_pc = pc;
+    }
+
+    fn set_sp(&mut self, sp: u8) {
+        self.r_sp = sp;
+    }
+
+    fn set_ac(&mut self, ac: u8) {
+        self.r_ac = ac;
+    }
+
+    fn set_ix(&mut self, ix: u8) {
+        self.r_ix = ix;
+    }
+
+    fn set_iy(&mut self, iy: u8) {
+        self.r_iy = iy;
     }
 
     fn state(&self) -> CpuState {
