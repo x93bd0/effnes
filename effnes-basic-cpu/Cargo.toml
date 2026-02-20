@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 effnes-bus = { path = "../effnes-bus" }
+effnes-cpu = { path = "../effnes-cpu"  }

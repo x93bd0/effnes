@@ -1,50 +1,39 @@
-use effnes_basic_cpu::vm;
-use effnes_bus::MemoryBus;
+use effnes_cpu::inspect::{InspectCpu, State};
 
-/// Basic memory implementation for testing purposes.
-pub struct CPUStatus {
-    pub pc: u16,
-    pub x: u8,
-    pub y: u8,
-    pub a: u8,
-    pub s: u8,
-    pub p: u8,
-    pub cycles: usize,
-}
-
-pub fn validate_cpu<T: MemoryBus>(vm: &vm::VM<T>, status: CPUStatus, error_string: String) {
+pub fn validate_cpu(vm: &impl InspectCpu, expected: State, error_string: String) {
+    let s = vm.state();
     assert_eq!(
-        vm.pc, status.pc,
+        s.pc, expected.pc,
         "Test Suite Error <{}>\nInvalid `Program Counter`",
         error_string
     );
     assert_eq!(
-        vm.a, status.a,
+        s.ac, expected.ac,
         "Test Suite Error <{}>\nInvalid `Accumulator`",
         error_string
     );
     assert_eq!(
-        vm.x, status.x,
+        s.ix, expected.ix,
         "Test Suite Error <{}>\nInvalid `X register`",
         error_string
     );
     assert_eq!(
-        vm.y, status.y,
+        s.iy, expected.iy,
         "Test Suite Error <{}>\nInvalid `Y register`",
         error_string
     );
     assert_eq!(
-        vm.p, status.p,
+        s.pc, expected.pc,
         "Test Suite Error <{}>\nInvalid `Program Status`",
         error_string
     );
     assert_eq!(
-        vm.s, status.s,
+        s.sp, expected.sp,
         "Test Suite Error <{}>\nInvalid `Stack Pointer`",
         error_string
     );
     assert_eq!(
-        vm.cycles, status.cycles,
+        s.cc, expected.cc,
         "Test Suite Error <{}>\nInvalid `Cycles`",
         error_string
     );
