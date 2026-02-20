@@ -32,8 +32,14 @@ pub struct VM<T: MemoryBus> {
 
 impl<T: MemoryBus + Default> Default for VM<T> {
     /// Instanciates a new Virtual Machine.
-    fn default() -> VM<T> {
-        VM {
+    fn default() -> Self {
+        Self::new(T::default())
+    }
+}
+
+impl<T: MemoryBus> VM<T> {
+    pub fn new(io: T) -> Self {
+        Self {
             pc: 0x8000,
             x: 0,
             y: 0,
@@ -43,13 +49,11 @@ impl<T: MemoryBus + Default> Default for VM<T> {
             h: 0,
             ex_interrupt: 0,
             cycles: 0,
-            io: T::default(),
             magic: 0xFE,
+            io,
         }
     }
-}
 
-impl<T: MemoryBus> VM<T> {
     fn enable_flag(&mut self, flag: consts::Flag) {
         self.p |= flag as u8;
     }

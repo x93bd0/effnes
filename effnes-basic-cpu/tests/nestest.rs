@@ -1,3 +1,4 @@
+use std::default::Default;
 /// Basic implementation of the NESTEST suite for automatically testing the VM.
 ///
 /// # Requirements
@@ -10,9 +11,8 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Lines, Read, Seek, SeekFrom};
 
 mod common;
-use common::BasicMemory;
-use effnes_bus::Memory;
-use effnes_cpu::vm::VM;
+use effnes_basic_cpu::vm::VM;
+use effnes_bus::{basic::BasicMemory, InspectBus, MemoryBus};
 
 /// Validate a VM run by comparing it to the output from the NESTEST suite.
 fn validate(vm: &VM<BasicMemory>, line: io::Result<String>) {
@@ -27,20 +27,20 @@ fn validate(vm: &VM<BasicMemory>, line: io::Result<String>) {
             a: u8::from_str_radix(&data[50..52], 16).unwrap(),
             s: u8::from_str_radix(&data[71..73], 16).unwrap(),
             p: u8::from_str_radix(&data[65..67], 16).unwrap(),
-            cycles: usize::from_str_radix(&data[90..], 16).unwrap(),
+            cycles: usize::from_str_radix(&data[90..], 10).unwrap(),
         },
         "NESTEST".to_string(),
     );
 
-    assert_eq!(0, vm.io.read_addr(2));
+    assert_eq!(0, vm.io.peek_u16(2));
 }
 
 #[test]
 fn nestest() -> io::Result<()> {
-    let mut vm: VM<BasicMemory> = Default::default();
+    let mut vm = VM::new(BasicMemory::default_with(0));
     let mut rom = File::open("res/nestest/nestest.nes").unwrap();
     rom.seek(SeekFrom::Start(16)).unwrap();
-    rom.read_exact(&mut vm.io.data[0xC000..0xFFFF]).unwrap();
+    rom.read_exact(&mut vm.io.memory[0xC000..0xFFFF]).unwrap();
 
     vm.reset();
     vm.pc = 0xC000;
