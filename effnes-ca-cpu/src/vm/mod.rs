@@ -30,7 +30,7 @@ enum State {
     Fetch,
     ResolveAddress(AddressResolverState),
     Process,
-    Write { dummy: bool, data: u8 },
+    Write { dummy: bool },
     Halt,
 }
 
@@ -452,27 +452,80 @@ impl Peripheral for VM {
                         }
 
                         // Read-Modify-Write operations
-                        Asl => {
-                            todo!();
-                        }
+                        Asl => match self.i_adm {
+                            AddressingMode::Implied => {
+                                self.set_flag(Flags::Carry, self.r_ac & 0x80 != 0);
+                                update_register!(self.r_ac = self.r_ac << 1);
+                            }
+
+                            _ => {
+                                self.set_flag(Flags::Carry, self.i_opr & 0x80 != 0);
+                                update_register!(self.i_opr = self.i_opr << 1);
+                                break 'new_state_match State::Write { dummy: true };
+                            }
+                        },
+                        Lsr => match self.i_adm {
+                            AddressingMode::Implied => {
+                                self.set_flag(Flags::Carry, self.r_ac & 1 != 0);
+                                update_register!(self.r_ac = self.r_ac >> 1);
+                            }
+
+                            _ => {
+                                self.set_flag(Flags::Carry, self.i_opr & 1 != 0);
+                                update_register!(self.i_opr = self.i_opr >> 1);
+                                break 'new_state_match State::Write { dummy: true };
+                            }
+                        },
 
                         Dec => {
-                            todo!();
+                            self.i_opr = self.i_opr.wrapping_sub(1);
+                            break 'new_state_match State::Write { dummy: true };
                         }
                         Inc => {
-                            todo!();
+                            self.i_opr = self.i_opr.wrapping_add(1);
+                            break 'new_state_match State::Write { dummy: true };
                         }
 
-                        Lsr => {
-                            todo!();
-                        }
+                        Rol => match self.i_adm {
+                            AddressingMode::Implied => {
+                                let c = self.r_ac & 0x80 > 0;
+                                update_register!(
+                                    self.r_ac =
+                                        (self.r_ac << 1) + self.r_ps.contains(Flags::Carry) as u8
+                                );
+                                self.set_flag(Flags::Carry, c);
+                            }
 
-                        Rol => {
-                            todo!();
-                        }
-                        Ror => {
-                            todo!();
-                        }
+                            _ => {
+                                let c = self.i_opr & 0x80 > 0;
+                                update_register!(
+                                    self.i_opr =
+                                        (self.i_opr << 1) + self.r_ps.contains(Flags::Carry) as u8
+                                );
+                                self.set_flag(Flags::Carry, c);
+                                break 'new_state_match State::Write { dummy: true };
+                            }
+                        },
+                        Ror => match self.i_adm {
+                            AddressingMode::Implied => {
+                                let c = self.r_ac & 1 > 0;
+                                update_register!(
+                                    self.r_ac = (self.r_ac >> 1)
+                                        + ((self.r_ps.contains(Flags::Carry) as u8) << 7)
+                                );
+                                self.set_flag(Flags::Carry, c);
+                            }
+
+                            _ => {
+                                let c = self.i_opr & 1 > 0;
+                                update_register!(
+                                    self.i_opr = (self.i_opr >> 1)
+                                        + ((self.r_ps.contains(Flags::Carry) as u8) << 7)
+                                );
+                                self.set_flag(Flags::Carry, c);
+                                break 'new_state_match State::Write { dummy: true };
+                            }
+                        },
 
                         // Miscellaneous operations
                         Bxx { flag, set } => {
@@ -594,13 +647,10 @@ impl Peripheral for VM {
                     State::Fetch
                 }
 
-                State::Write { dummy: true, data } => State::Write {
-                    dummy: false,
-                    data: *data,
-                },
+                State::Write { dummy: true } => State::Write { dummy: false },
 
-                State::Write { dummy: false, data } => {
-                    io.write_u8(self.i_ab, *data);
+                State::Write { dummy: false } => {
+                    io.write_u8(self.i_ab, self.i_opr);
                     State::Fetch
                 }
             }
