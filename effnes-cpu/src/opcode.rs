@@ -3,7 +3,7 @@ use std::fmt::Display;
 
 pub type OpCode = u8;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Mnemonic {
     Adc,
     Anc,
@@ -154,7 +154,7 @@ pub static JUMP_TABLE: [Mnemonic; 256] = [
     Rla,
     Bxx {
         flag: Flags::Negative,
-        set: false,
+        set: true,
     },
     And,
     Jam,

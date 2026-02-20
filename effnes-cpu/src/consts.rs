@@ -7,7 +7,7 @@ pub enum CpuVector {
 }
 
 bitflags! {
-    #[derive(Copy, Clone, Debug)]
+    #[derive(Copy, Clone, Debug, PartialEq)]
     pub struct Flags: u8 {
         const Carry    = 0b0000_0001;
         const Zero     = 0b0000_0010;
