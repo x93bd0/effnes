@@ -3,6 +3,6 @@
 resolver = "2"
 members = [
   "effnes-bus",
-  "effnes-functional-cpu",
-  "effnes-cycle-accurate-cpu"
+  "effnes-basic-cpu",
+  "effnes-ca-cpu"
 ]
