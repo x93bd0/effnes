@@ -1,8 +1,4 @@
 [workspace]
 
 resolver = "2"
-members = [
-  "effnes-bus",
-  "effnes-basic-cpu",
-  "effnes-ca-cpu"
-]
+members = ["effnes-bus", "effnes-basic-cpu", "effnes-ca-cpu", "effnes-cpu", ]
