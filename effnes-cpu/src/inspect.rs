@@ -8,6 +8,8 @@ pub struct State {
     pub iy: u8,
     pub am: AddressingMode,
     pub ps: Flags,
+
+    pub cc: usize,
 }
 
 pub trait InspectCpu {

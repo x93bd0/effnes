@@ -634,6 +634,9 @@ impl<T: MemoryBus + InspectBus> InspectCpu for VM<T> {
             iy: self.r_iy,
             am: self.i_adm,
             ps: self.r_ps,
+
+            // TODO: Count cycles
+            cc: 0,
         }
     }
 }
