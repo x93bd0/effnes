@@ -1,7 +1,8 @@
-use effnes_bus::MemoryBus;
+use effnes_bus::{InspectBus, MemoryBus};
 use effnes_cpu::{
     addr::{AddressingMode, IndexRegister},
     consts::{CpuVector, Flags},
+    inspect::{InspectCpu, State as CpuState},
     opcode::Mnemonic,
 };
 
@@ -619,6 +620,21 @@ impl<T: MemoryBus> VM<T> {
                 }
             }
         };
+    }
+}
+
+impl<T: MemoryBus + InspectBus> InspectCpu for VM<T> {
+    const CYCLE_ACCURATE: bool = true;
+    fn state(&self) -> CpuState {
+        CpuState {
+            pc: self.r_pc,
+            sp: self.r_sp,
+            ac: self.r_ac,
+            ix: self.r_ix,
+            iy: self.r_iy,
+            am: self.i_adm,
+            ps: self.r_ps,
+        }
     }
 }
 

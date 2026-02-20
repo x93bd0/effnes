@@ -2,8 +2,8 @@ use crate::{addr::AddressingMode, consts::Flags};
 
 pub struct State {
     pub pc: u16,
-    pub sp: u16,
-    pub ac: u16,
+    pub sp: u8,
+    pub ac: u8,
     pub ix: u8,
     pub iy: u8,
     pub am: AddressingMode,
