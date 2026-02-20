@@ -1,8 +1,10 @@
-use crate::consts::{self, AddrMode, OpCode};
+use crate::consts;
 use effnes_bus::{peripheral::Peripheral, MemoryBus};
 use effnes_cpu::{
+    addr::{AddressingMode, IndexRegister},
     consts::{CpuVector, Flags},
     inspect::{InspectCpu, State as CpuState},
+    opcode::{Mnemonic, OpCode},
 };
 
 /// 6502 Virtual Machine
@@ -220,11 +222,11 @@ impl Peripheral for VM {
     /// using a match statement that runs the desired opcode efficiently.
     ///
     fn cycle(&mut self, io: &mut impl MemoryBus) -> () {
-        let opcode: u8 = self.next_byte(io);
+        let opcode: OpCode = self.next_byte(io);
+
+        let am: AddressingMode = opcode.into();
 
         let internal_repr: u16 = consts::TRANSLATION_TABLE[opcode as usize];
-        let raw_internal_opcode: u8 = (internal_repr >> 8) as u8;
-        let raw_address_mode: u8 = ((internal_repr >> 4) & 0b1111) as u8;
         let base_timing: u8 = ((internal_repr >> 1) & 0b111) as u8;
         let mut timing: u8 = (internal_repr & 0b1) as u8;
 
@@ -232,17 +234,9 @@ impl Peripheral for VM {
         let t_byte2: u8;
         let mut t_addr: u16;
 
-        let address_mode_result = consts::AddrMode::try_from(raw_address_mode);
-        let address_mode = match address_mode_result {
-            Ok(mode) => mode,
-            Err(_) => {
-                self.h = 1;
-                return;
-            }
-        };
-
-        use AddrMode::*;
-        match address_mode {
+        use AddressingMode::*;
+        use IndexRegister::*;
+        match am {
             Immediate => {
                 t_addr = self.pc;
                 self.pc += 1;
@@ -276,7 +270,7 @@ impl Peripheral for VM {
                 t_addr = self.next_byte(io) as u16;
             }
 
-            AbsoluteX => {
+            AbsoluteI(X) => {
                 t_addr = self.next_addr(io);
                 if ((t_addr.wrapping_add(self.x as u16)) & 0xff00) != (t_addr & 0xff00) {
                     timing += 1;
@@ -285,7 +279,7 @@ impl Peripheral for VM {
                 t_addr += self.x as u16;
             }
 
-            AbsoluteY => {
+            AbsoluteI(Y) => {
                 t_addr = self.next_addr(io);
                 if ((t_addr.wrapping_add(self.y as u16)) & 0xff00) != (t_addr & 0xff00) {
                     timing += 1;
@@ -294,17 +288,17 @@ impl Peripheral for VM {
                 t_addr = t_addr.wrapping_add(self.y as u16);
             }
 
-            ZeroPageX => {
+            ZeroPageI(X) => {
                 t_byte1 = self.next_byte(io);
                 t_addr = t_byte1.wrapping_add_signed(self.x as i8) as u16;
             }
 
-            ZeroPageY => {
+            ZeroPageI(Y) => {
                 t_byte1 = self.next_byte(io);
                 t_addr = t_byte1.wrapping_add_signed(self.y as i8) as u16;
             }
 
-            IndirectX => {
+            IndirectI(X) => {
                 t_byte1 = self.next_byte(io);
                 t_addr = ((io.read_u8(t_byte1.wrapping_add_signed((self.x as i8) + 1) as u16)
                     as u16)
@@ -312,7 +306,7 @@ impl Peripheral for VM {
                     + (io.read_u8(t_byte1.wrapping_add_signed(self.x as i8) as u16) as u16);
             }
 
-            IndirectY => {
+            IndirectI(Y) => {
                 t_byte1 = self.next_byte(io);
                 t_addr = io.read_u8(t_byte1 as u16) as u16;
                 t_addr += (io.read_u8(t_byte1.wrapping_add(1) as u16) as u16) << 8;
@@ -328,17 +322,9 @@ impl Peripheral for VM {
             }
         };
 
-        let internal_opcode_result = OpCode::try_from(raw_internal_opcode);
-        let internal_opcode = match internal_opcode_result {
-            Ok(opcode) => opcode,
-            Err(_) => {
-                self.h = 1;
-                return;
-            }
-        };
-
-        use OpCode::*;
-        match internal_opcode {
+        use Mnemonic::*;
+        let mne: Mnemonic = opcode.into();
+        match mne {
             // Memory / Registers
             Lda => {
                 self.a = io.read_u8(t_addr);
@@ -489,7 +475,7 @@ impl Peripheral for VM {
 
             // Shift / Rotate
             Asl => {
-                t_byte1 = if address_mode == AddrMode::Accumulator {
+                t_byte1 = if am == Implied {
                     self.a
                 } else {
                     io.read_u8(t_addr)
@@ -498,7 +484,7 @@ impl Peripheral for VM {
                 self.set_flag(Flags::Carry, t_byte1 & 0x80 != 0);
                 t_byte1 <<= 1;
 
-                if address_mode == AddrMode::Accumulator {
+                if am == Implied {
                     self.a = t_byte1;
                 } else {
                     io.write_u8(t_addr, t_byte1);
@@ -508,7 +494,7 @@ impl Peripheral for VM {
             }
 
             Lsr => {
-                t_byte1 = if address_mode == AddrMode::Accumulator {
+                t_byte1 = if am == Implied {
                     self.a
                 } else {
                     io.read_u8(t_addr)
@@ -517,7 +503,7 @@ impl Peripheral for VM {
                 self.set_flag(Flags::Carry, t_byte1 & 0x1 != 0);
                 t_byte1 >>= 1;
 
-                if address_mode == AddrMode::Accumulator {
+                if am == Implied {
                     self.a = t_byte1;
                 } else {
                     io.write_u8(t_addr, t_byte1);
@@ -527,7 +513,7 @@ impl Peripheral for VM {
             }
 
             Rol => {
-                t_byte1 = if address_mode == AddrMode::Accumulator {
+                t_byte1 = if am == Implied {
                     self.a
                 } else {
                     io.read_u8(t_addr)
@@ -538,7 +524,7 @@ impl Peripheral for VM {
                 t_byte1 <<= 1;
                 t_byte1 = t_byte1.wrapping_add(t_byte2);
 
-                if address_mode == AddrMode::Accumulator {
+                if am == Implied {
                     self.a = t_byte1;
                 } else {
                     io.write_u8(t_addr, t_byte1);
@@ -548,7 +534,7 @@ impl Peripheral for VM {
             }
 
             Ror => {
-                t_byte1 = if address_mode == AddrMode::Accumulator {
+                t_byte1 = if am == Implied {
                     self.a
                 } else {
                     io.read_u8(t_addr)
@@ -559,7 +545,7 @@ impl Peripheral for VM {
                 t_byte1 >>= 1;
                 t_byte1 = t_byte1.wrapping_add(if t_byte2 == 1 { 0x80 } else { 0 });
 
-                if address_mode == AddrMode::Accumulator {
+                if am == Implied {
                     self.a = t_byte1;
                 } else {
                     io.write_u8(t_addr, t_byte1);
@@ -569,32 +555,12 @@ impl Peripheral for VM {
             }
 
             // Flags
-            Clc => {
-                self.r_ps = self.r_ps.difference(Flags::Carry);
+            Clx { flag } => {
+                self.r_ps = self.r_ps.difference(flag);
             }
 
-            Cld => {
-                self.r_ps = self.r_ps.difference(Flags::Decimal);
-            }
-
-            Cli => {
-                self.r_ps = self.r_ps.difference(Flags::IntDis);
-            }
-
-            Clv => {
-                self.r_ps = self.r_ps.difference(Flags::Overflow);
-            }
-
-            Sec => {
-                self.r_ps = self.r_ps.union(Flags::Carry);
-            }
-
-            Sed => {
-                self.r_ps = self.r_ps.union(Flags::Decimal);
-            }
-
-            Sei => {
-                self.r_ps = self.r_ps.union(Flags::IntDis);
+            Sfx { flag } => {
+                self.r_ps = self.r_ps.union(flag);
             }
 
             // Comparisons
@@ -616,58 +582,9 @@ impl Peripheral for VM {
                 self.set_nz_flags(self.y.wrapping_sub(t_byte1));
             }
 
-            Bcc => {
-                if self.r_ps.contains(Flags::Carry) == false {
-                    timing += 1 + t_byte1;
-                    self.pc = t_addr;
-                }
-            }
-
             // Conditional
-            Bcs => {
-                if self.r_ps.contains(Flags::Carry) != false {
-                    timing += 1 + t_byte1;
-                    self.pc = t_addr;
-                }
-            }
-
-            Beq => {
-                if self.r_ps.contains(Flags::Zero) != false {
-                    timing += 1 + t_byte1;
-                    self.pc = t_addr;
-                }
-            }
-
-            Bmi => {
-                if self.r_ps.contains(Flags::Negative) != false {
-                    timing += 1 + t_byte1;
-                    self.pc = t_addr;
-                }
-            }
-
-            Bne => {
-                if self.r_ps.contains(Flags::Zero) == false {
-                    timing += 1 + t_byte1;
-                    self.pc = t_addr;
-                }
-            }
-
-            Bpl => {
-                if self.r_ps.contains(Flags::Negative) == false {
-                    timing += 1 + t_byte1;
-                    self.pc = t_addr;
-                }
-            }
-
-            Bvc => {
-                if self.r_ps.contains(Flags::Overflow) == false {
-                    timing += 1 + t_byte1;
-                    self.pc = t_addr;
-                }
-            }
-
-            Bvs => {
-                if self.r_ps.contains(Flags::Overflow) != false {
+            Bxx { flag, set } => {
+                if self.r_ps.contains(flag) == set {
                     timing += 1 + t_byte1;
                     self.pc = t_addr;
                 }
@@ -725,7 +642,7 @@ impl Peripheral for VM {
                 self.set_nz_flags(self.a);
             }
 
-            An1 | An2 => {
+            Anc => {
                 self.a &= io.read_u8(t_addr);
                 self.set_flag(Flags::Carry, self.a & 0x80 != 0);
                 self.set_nz_flags(self.a);
@@ -842,12 +759,12 @@ impl Peripheral for VM {
             }
 
             Sha => {
-                t_byte1 = match address_mode {
+                t_byte1 = match am {
                     // TODO: Only read one bit
-                    AddrMode::AbsoluteY => {
+                    AbsoluteI(Y) => {
                         ((io.read_u16(self.pc.wrapping_sub(2)) >> 8) as u8).wrapping_add(1)
                     }
-                    AddrMode::ZeroPageY => {
+                    ZeroPageI(Y) => {
                         t_byte1 = io.read_u8(self.pc.wrapping_sub(1)).wrapping_add(1);
                         io.read_u8(t_byte1 as u16)
                     }
@@ -863,12 +780,7 @@ impl Peripheral for VM {
             Shx | Shy => {
                 // TODO: Only read one byte
                 t_byte2 = io.read_u8(self.pc.wrapping_sub(1));
-                t_byte1 = t_byte2.wrapping_add(1)
-                    & (if raw_internal_opcode == (Shx as u8) {
-                        self.x
-                    } else {
-                        self.y
-                    });
+                t_byte1 = t_byte2.wrapping_add(1) & (if mne == Shx { self.x } else { self.y });
 
                 if t_byte2 != ((t_addr >> 8) as u8) {
                     t_addr = (t_addr & 0xff) | ((t_byte1 as u16) << 8).wrapping_add(1);
@@ -914,6 +826,8 @@ impl Peripheral for VM {
             Jam => {
                 self.h = 1;
             }
+
+            _ => todo!(),
         }
 
         let cycle_expr: u8 = 1 + base_timing + if timing > 0 { timing - 1 } else { 0 };
